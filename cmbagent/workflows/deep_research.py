@@ -118,6 +118,10 @@ def deep_research(
     idea_maker_model=default_agents_llm_model['idea_maker'],
     idea_hater_model=default_agents_llm_model['idea_hater'],
     camb_context_model=default_agents_llm_model['camb_context'],
+    # hep-theory fork: added inspirehep_context, cadabra_context, derivation_checker
+    inspirehep_context_model=default_agents_llm_model['inspirehep_context'],
+    cadabra_context_model=default_agents_llm_model['cadabra_context'],
+    derivation_checker_model=default_agents_llm_model['derivation_checker'],
     default_llm_model=default_llm_model_default,
     default_formatter_model=default_formatter_model_default,
     work_dir=work_dir_default,
@@ -331,6 +335,9 @@ def deep_research(
     engineer_config = engineer_model if isinstance(engineer_model, dict) else get_model_config(engineer_model, api_keys)
     researcher_config = get_model_config(researcher_model, api_keys)
     camb_context_config = get_model_config(camb_context_model, api_keys)
+    inspirehep_context_config = get_model_config(inspirehep_context_model, api_keys)
+    cadabra_context_config = get_model_config(cadabra_context_model, api_keys)
+    derivation_checker_config = get_model_config(derivation_checker_model, api_keys)
     idea_maker_config = get_model_config(idea_maker_model, api_keys)
     idea_hater_config = get_model_config(idea_hater_model, api_keys)
 
@@ -371,6 +378,9 @@ def deep_research(
                 'idea_maker': idea_maker_config,
                 'idea_hater': idea_hater_config,
                 'camb_context': camb_context_config,
+                'inspirehep_context': inspirehep_context_config,
+                'cadabra_context': cadabra_context_config,
+                'derivation_checker': derivation_checker_config,
             },
             mode="deep_research",
             api_keys=api_keys,
