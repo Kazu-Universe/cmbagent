@@ -118,18 +118,23 @@ default_formatter_model = 'o3-mini-2025-01-31'
 
 
 
-default_agents_llm_model ={
-    "engineer": "gpt-4.1-2025-04-14",
-    "aas_keyword_finder": "o3-mini-2025-01-31",
-    "researcher": "gpt-4.1-2025-04-14",
-    "planner": "gpt-4.1-2025-04-14",
-    "plan_reviewer": "o3-mini-2025-01-31",
-    "idea_hater":  "o3-mini-2025-01-31",
-    "idea_maker": "gpt-4.1-2025-04-14",
-    "camb_context": "gpt-4.1-2025-04-14",
-    "summarizer": "gpt-4.1-2025-04-14",
-    "summarizer_response_formatter": "o3-mini-2025-01-31",
-
+# hep-theory fork: all-Anthropic defaults (was hardcoded to OpenAI models).
+# Fable 5 for planning/idea-generation roles (exploratory, long-context synthesis);
+# Sonnet for execution/critique roles; Haiku for mechanical formatting.
+default_agents_llm_model = {
+    "engineer": "claude-sonnet-5",
+    "aas_keyword_finder": "claude-haiku-4-5-20251001",
+    "researcher": "claude-sonnet-5",
+    "planner": "claude-fable-5",
+    "plan_reviewer": "claude-sonnet-5",
+    "idea_hater": "claude-fable-5",
+    "idea_maker": "claude-fable-5",
+    "camb_context": "claude-sonnet-5",
+    "summarizer": "claude-haiku-4-5-20251001",
+    "summarizer_response_formatter": "claude-haiku-4-5-20251001",
+    "inspirehep_context": "claude-sonnet-5",
+    "cadabra_context": "claude-sonnet-5",
+    "derivation_checker": "claude-sonnet-5",
 }
 
 default_agent_llm_configs = {}
