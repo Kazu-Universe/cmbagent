@@ -61,7 +61,7 @@ default_chunking_strategy = {
 # By default, the file_search tool outputs up to 20 chunks for gpt-4* models and up to 5 chunks for gpt-3.5-turbo. 
 # You can adjust this by setting file_search.max_num_results in the tool when creating the assistant or the run.
 
-default_top_p = 0.05
+default_top_p = None  # hep-theory fork: top_p disabled - some Claude models (e.g. claude-fable-5) reject top_p entirely via the Anthropic API
 default_temperature = 0.00001
 
 
