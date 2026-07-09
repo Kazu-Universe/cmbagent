@@ -61,7 +61,7 @@ default_chunking_strategy = {
 # By default, the file_search tool outputs up to 20 chunks for gpt-4* models and up to 5 chunks for gpt-3.5-turbo. 
 # You can adjust this by setting file_search.max_num_results in the tool when creating the assistant or the run.
 
-default_top_p = None  # hep-theory fork: top_p disabled - some Claude models (e.g. claude-fable-5) reject top_p entirely via the Anthropic API
+default_top_p = None  # hep-theory fork: top_p disabled - some Claude models (e.g. claude-haiku-4-5-20251001) reject top_p entirely via the Anthropic API
 default_temperature = 0.00001
 
 
@@ -121,14 +121,16 @@ default_formatter_model = 'o3-mini-2025-01-31'
 # hep-theory fork: all-Anthropic defaults (was hardcoded to OpenAI models).
 # Fable 5 for planning/idea-generation roles (exploratory, long-context synthesis);
 # Sonnet for execution/critique roles; Haiku for mechanical formatting.
+# hep-theory fork: TEMP cheap-model debug swap - fable-5 -> haiku for now,
+# swap back once the pipeline is confirmed working end-to-end.
 default_agents_llm_model = {
     "engineer": "claude-sonnet-5",
     "aas_keyword_finder": "claude-haiku-4-5-20251001",
     "researcher": "claude-sonnet-5",
-    "planner": "claude-fable-5",
+    "planner": "claude-haiku-4-5-20251001",
     "plan_reviewer": "claude-sonnet-5",
-    "idea_hater": "claude-fable-5",
-    "idea_maker": "claude-fable-5",
+    "idea_hater": "claude-haiku-4-5-20251001",
+    "idea_maker": "claude-haiku-4-5-20251001",
     "camb_context": "claude-sonnet-5",
     "summarizer": "claude-haiku-4-5-20251001",
     "summarizer_response_formatter": "claude-haiku-4-5-20251001",
@@ -145,6 +147,13 @@ default_agent_llm_configs = {}
 local_llm_urls = {
     "gpt-oss-120b": os.getenv("GPT_OSS_120B_URL"),
     # "gpt-oss-20b": os.getenv("GPT_OSS_20B_URL"),
+    # hep-theory fork: registered OpenRouter/DeepSeek models. This dict is
+    # really "model name -> trusted base_url", not strictly "local" - it's
+    # also what clean_llm_config() checks before stripping base_url from any
+    # api_type='openai' config, so OpenRouter models need to be here even
+    # though they're not local.
+    "deepseek/deepseek-v4-pro": "https://openrouter.ai/api/v1",
+    "deepseek/deepseek-v4-flash": "https://openrouter.ai/api/v1",
 }
 
 def get_api_keys_from_env():
