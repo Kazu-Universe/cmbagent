@@ -55,8 +55,10 @@ def create_record_plan_constraints(cmbagent_instance, planner):
     """Factory function to create record_plan_constraints with cmbagent instance."""
 
     def record_plan_constraints(
+        # hep-theory fork: added inspirehep_context/cadabra_context/derivation_checker
         needed_agents: List[Literal["engineer", "researcher", "idea_maker", "idea_hater",
-                                    "camb_context", "classy_context", "aas_keyword_finder"]],
+                                    "camb_context", "classy_context", "aas_keyword_finder",
+                                    "inspirehep_context", "cadabra_context", "derivation_checker"]],
         context_variables: ContextVariables
     ) -> ReplyResult:
         """Records the constraints on the plan."""
@@ -69,7 +71,15 @@ def create_record_plan_constraints(cmbagent_instance, planner):
 **AGENT ROLES**
 Here are the descriptions of the agents that are needed to carry out the plan:
 """
+        # hep-theory fork: defensive lookup - skip any LLM-selected agent name
+        # that isn't actually registered in this session, rather than crashing
+        # the whole process via get_agent_from_name()'s sys.exit() on a miss.
+        registered_names = {a.info['name'] for a in cmbagent_instance.agents}
         for agent in set(needed_agents):
+            if agent not in registered_names:
+                print(f"WARNING: plan_setter selected '{agent}' but it is not "
+                      f"registered in this session's agent_list - skipping.")
+                continue
             agent_object = cmbagent_instance.get_agent_from_name(agent)
             str_to_append += f'- {agent}: {agent_object.description}'
 
