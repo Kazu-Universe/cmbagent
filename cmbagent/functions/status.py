@@ -99,12 +99,16 @@ def _display_new_images(cmbagent_instance, context_variables: ContextVariables) 
 
 def _initialize_transfer_flags(context_variables: ContextVariables) -> None:
     """Initialize all agent transfer flags to False."""
+    # hep-theory fork: added inspirehep_context/cadabra_context/derivation_checker
     agent_transfer_map = {
         "engineer": "transfer_to_engineer",
         "researcher": "transfer_to_researcher",
         "idea_maker": "transfer_to_idea_maker",
         "idea_hater": "transfer_to_idea_hater",
         "camb_context": "transfer_to_camb_context",
+        "inspirehep_context": "transfer_to_inspirehep_context",
+        "cadabra_context": "transfer_to_cadabra_context",
+        "derivation_checker": "transfer_to_derivation_checker",
     }
 
     for flag_name in agent_transfer_map.values():
@@ -114,12 +118,16 @@ def _initialize_transfer_flags(context_variables: ContextVariables) -> None:
 
 def _determine_next_agent_human_in_loop(cmbagent_instance, context_variables: ContextVariables):
     """Determine next agent for human-in-the-loop mode."""
+    # hep-theory fork: added inspirehep_context/cadabra_context/derivation_checker
     agent_transfer_map = {
         "engineer": "transfer_to_engineer",
         "researcher": "transfer_to_researcher",
         "idea_maker": "transfer_to_idea_maker",
         "idea_hater": "transfer_to_idea_hater",
         "camb_context": "transfer_to_camb_context",
+        "inspirehep_context": "transfer_to_inspirehep_context",
+        "cadabra_context": "transfer_to_cadabra_context",
+        "derivation_checker": "transfer_to_derivation_checker",
     }
 
     agent_to_transfer_to = None
@@ -146,12 +154,16 @@ def _determine_next_agent_human_in_loop(cmbagent_instance, context_variables: Co
 
 def _determine_next_agent_default(cmbagent_instance, context_variables: ContextVariables):
     """Determine next agent for default mode."""
+    # hep-theory fork: added inspirehep_context/cadabra_context/derivation_checker
     agent_transfer_map = {
         "engineer": "transfer_to_engineer",
         "researcher": "transfer_to_researcher",
         "idea_maker": "transfer_to_idea_maker",
         "idea_hater": "transfer_to_idea_hater",
         "camb_context": "transfer_to_camb_context",
+        "inspirehep_context": "transfer_to_inspirehep_context",
+        "cadabra_context": "transfer_to_cadabra_context",
+        "derivation_checker": "transfer_to_derivation_checker",
     }
 
     agent_to_transfer_to = None
@@ -217,7 +229,8 @@ def create_record_status(cmbagent_instance, controller):
         current_sub_task: str,
         current_instructions: str,
         agent_for_sub_task: Literal["engineer", "researcher", "idea_maker", "idea_hater",
-                                    "camb_context", "classy_context", "aas_keyword_finder"],
+                                    "camb_context", "classy_context", "aas_keyword_finder",
+                                    "inspirehep_context", "cadabra_context", "derivation_checker"],
         context_variables: ContextVariables
     ) -> ReplyResult:
         """
@@ -310,12 +323,16 @@ def create_record_status_starter(cmbagent_instance):
         icon = status_icons.get(current_status, "")
 
         # Map agent names to their transfer flag names
+        # hep-theory fork: added inspirehep_context/cadabra_context/derivation_checker
         agent_transfer_map = {
             "engineer": "transfer_to_engineer",
             "researcher": "transfer_to_researcher",
             "idea_maker": "transfer_to_idea_maker",
             "idea_hater": "transfer_to_idea_hater",
             "camb_context": "transfer_to_camb_context",
+            "inspirehep_context": "transfer_to_inspirehep_context",
+            "cadabra_context": "transfer_to_cadabra_context",
+            "derivation_checker": "transfer_to_derivation_checker",
         }
 
         # Initialize all transfer flags to False
