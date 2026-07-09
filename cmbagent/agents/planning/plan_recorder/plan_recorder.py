@@ -64,8 +64,30 @@ class PlanRecorderConversableAgent(ConversableAgent):
         if not messages:
             return True, "No message to process."
 
-        last_message = messages[-1]
-        content = last_message.get("content", "")
+        # hep-theory fork: search full history for real plan content.
+        # messages[-1] (this agent's narrow per-sender view) is often an empty
+        # placeholder attributed to _Group_Tool_Executor rather than the real
+        # formatted plan text - search across ALL conversation partners for the
+        # most recent substantive message from planner_response_formatter.
+        content = ""
+        try:
+            all_partners = recipient._oai_messages
+            candidates = []
+            for partner, msg_list in all_partners.items():
+                for m in msg_list:
+                    if m.get("name") == "planner_response_formatter" and m.get("content"):
+                        candidates.append(m)
+            if candidates:
+                content = candidates[-1].get("content", "")
+        except Exception as e:
+            print(f">>> DIAGNOSTIC plan_recorder: full-history search failed: {e}")
+
+        if not content:
+            # fall back to the original narrow view, in case the search above
+            # legitimately found nothing (e.g. different agent name/flow)
+            last_message = messages[-1] if messages else {}
+            content = last_message.get("content", "")
+
 
         # Parse the formatted plan string to get structured data
         try:
