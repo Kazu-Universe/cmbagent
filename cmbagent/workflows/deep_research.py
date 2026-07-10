@@ -435,11 +435,19 @@ def deep_research(
             break
 
         # Collect step summaries
+        # hep-theory fork: check original unstripped agent name - fixes
+        # custom agents (inspirehep_context, cadabra_context) that don't have
+        # a _response_formatter companion, so the stripped-name lookup below
+        # (built for camb_context's convention) never matched their real
+        # output, silently leaving previous_steps_execution_summary empty.
+        original_agent_for_step = agent_for_step
+        stripped_agent_for_step = agent_for_step.removesuffix("_context").removesuffix("_agent")
         for msg in results['chat_history'][::-1]:
             if 'name' in msg:
-                agent_for_step = agent_for_step.removesuffix("_context")
-                agent_for_step = agent_for_step.removesuffix("_agent")
-                if msg['name'] == agent_for_step or msg['name'] == f"{agent_for_step}_nest" or msg['name'] == f"{agent_for_step}_response_formatter":
+                if (msg['name'] == original_agent_for_step
+                        or msg['name'] == stripped_agent_for_step
+                        or msg['name'] == f"{stripped_agent_for_step}_nest"
+                        or msg['name'] == f"{stripped_agent_for_step}_response_formatter"):
                     this_step_execution_summary = msg['content']
                     summary = f"### Step {step}\n{this_step_execution_summary.strip()}"
                     step_summaries.append(summary)
