@@ -22,7 +22,7 @@ license = "Apache-2.0"
 dependencies = [
     # LLM clients
     "anthropic",
-    "mistralai",
+    "mistralai==1.9.2",
 
     # AG2 framework for multi-agent orchestration
     "cmbagent_autogen>=0.0.91post11",
@@ -108,6 +108,17 @@ all = [
     "cmbagent[astro]",
     "cmbagent[data]",
     "cmbagent[dev]",
+    "cmbagent[hep-theory]",
+]
+
+# hep-th dependencies
+hep-theory = [
+    "sympy>=1.13",
+    "einsteinpy>=0.4.0",       # GR tensor calculus in Python (metric, curvature, geodesics)
+                                            # reliable than PyPI for this — see README note
+    "requests>=2.31",          # INSPIRE-HEP literature API calls
+    "arxiv>=2.1",              # arXiv API fallback / cross-check against INSPIRE
+    "networkx>=3.2",           # citation-graph traversal for literature agent
 ]
 
 [tool.setuptools.package-data]
@@ -143,3 +154,11 @@ dev = [
     "nbstripout>=0.9.0",
     "pre-commit>=4.5.1",
 ]
+
+
+# Notes:
+# - cadabra2 wheels are inconsistent on PyPI; if pip install fails, install via
+#   `conda install -c conda-forge cadabra2` in the same env cmbagent runs in.
+# - xAct/Mathematica is NOT declared here since it's not a Python package. If you want
+#   the engineer agent to call it, keep your existing Wolfram Engine + wolframscript
+#   install on PATH; Claude Code shells out to it directly (see README).

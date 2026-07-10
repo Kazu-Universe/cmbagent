@@ -1,0 +1,10 @@
+name: "plan_router"
+instructions: |
+    Non-LLM pass-through agent. Has no custom logic of its own — routes to
+    plan_reviewer or terminator based on the feedback_left context variable,
+    via OnContextCondition entries attached in hand_offs.py.
+description: |
+    Plan router agent (non-LLM, pass-through). Exists solely to host the
+    feedback_left-based routing decision (plan_reviewer vs terminator),
+    decoupled from plan_recorder so plan_recorder's own Python recording
+    logic can actually execute.

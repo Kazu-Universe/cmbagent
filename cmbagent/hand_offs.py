@@ -33,7 +33,11 @@ def register_all_hand_offs(cmbagent_instance):
         'admin', 'aas_keyword_finder', 'executor_response_formatter',
         'plan_setter', 'installer', 'engineer_nest', 'idea_saver',
         'camb_context',
-        'camb_response_formatter'
+        'camb_response_formatter',
+        'inspirehep_context',
+        'cadabra_context',
+        'derivation_checker',
+        'plan_router',  # hep-theory fork: plan_router decoupling
     ]
 
     # Retrieve all core agents at once
@@ -82,9 +86,13 @@ def register_all_hand_offs(cmbagent_instance):
         # Other flows
         ('aas_keyword_finder', 'controller'),
 
-
         # Context agents
         ('camb_context', 'camb_response_formatter'),
+
+        # Theory context agents
+        ('inspirehep_context', 'controller'),
+        ('cadabra_context', 'controller'),
+        ('derivation_checker', 'controller'),
     ]
 
     # Apply simple handoffs
@@ -98,14 +106,22 @@ def register_all_hand_offs(cmbagent_instance):
     # plan_recorder: conditional routing based on feedback_left
     # If feedback_left == 0, planning is complete -> go to terminator
     # Otherwise, continue to plan_reviewer for feedback
-    agents['plan_recorder'].agent.handoffs.add_after_works([
+    # hep-theory fork: plan_router decoupling.
+    # plan_recorder now hands off unconditionally to plan_router, so its own
+    # Python logic (_record_plan_reply) actually gets to run and set
+    # final_plan/proposed_plan/number_of_steps_in_plan. plan_router (which has
+    # no competing custom reply logic of its own) carries the actual
+    # feedback_left-based routing decision.
+    agents['plan_recorder'].agent.handoffs.set_after_work(AgentTarget(agents['plan_router'].agent))
+
+    agents['plan_router'].agent.handoffs.add_context_conditions([
         OnContextCondition(
             target=AgentTarget(agents['terminator'].agent),
             condition=ExpressionContextCondition(ContextExpression("${feedback_left} == 0")),
         ),
         OnContextCondition(
             target=AgentTarget(agents['plan_reviewer'].agent),
-            condition=None,  # Default fallback
+            condition=ExpressionContextCondition(ContextExpression("${feedback_left} != 0")),
         ),
     ])
 
@@ -217,6 +233,9 @@ def register_all_hand_offs(cmbagent_instance):
             ('idea_maker', "idea_maker needed to make new ideas"),
             ('idea_hater', "idea_hater needed to critique ideas"),
             ('terminator', "The task is completed."),
+            ('inspirehep_context', "inspirehep_context needed to retrieve or verify HEP-theory literature."),
+            ('cadabra_context', "cadabra_context needed for symbolic tensor/index algebra guidance."),
+            ('derivation_checker', "derivation_checker needed to critique a derivation before accepting it."),
         ]
 
         agents['controller'].agent.handoffs.add_llm_conditions([

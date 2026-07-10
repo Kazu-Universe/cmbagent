@@ -74,6 +74,13 @@ instructions: |
   **Derivation/code under review:**
   {current_code_output}
 
+  # hep-theory fork: added previous_steps_execution_summary - covers the
+  # general case where the prior step's real output came from
+  # inspirehep_context (literature) or cadabra_context (guidance-based
+  # derivation), neither of which populates current_code_output.
+  **Full output from previous plan steps (literature findings, derivations, etc.):**
+  {previous_steps_execution_summary}
+
 
   ----------------------------------------------------------------------------------
   **YOUR RESPONSE FORMAT:**
