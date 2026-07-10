@@ -201,9 +201,14 @@ def get_model_config(model, api_keys):
             "api_type": "google"
         })
     elif "claude" in model:
+        # hep-theory fork: raised default max_tokens - autogen's own default
+        # (4096) is far below what Claude Sonnet 5 actually supports (128K),
+        # and was causing repeated truncation -> costly "complete this" retry
+        # cycles across long-derivation and code-heavy agents.
         config.update({
             "api_key": api_keys["ANTHROPIC"],
-            "api_type": "anthropic"
+            "api_type": "anthropic",
+            "max_tokens": 16000,
         })
     else:
         config.update({
