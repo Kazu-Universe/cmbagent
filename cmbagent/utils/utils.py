@@ -189,16 +189,24 @@ def get_model_config(model, api_keys):
         return config
 
     # Known cloud providers
+    # hep-theory fork: max_tokens for remaining branches (not actively used
+    # in this fork - all agents route through Claude - but closes the gap
+    # for any future use, matching the fix on the 'claude' branch below).
     if 'o3' in model or 'o1' in model:
+        # Note: reasoning models spend tokens on internal reasoning AND final
+        # output from the same budget - 16000 may be too low if this branch
+        # is ever actually exercised; untested in this fork, raise if needed.
         config.update({
             "reasoning_effort": "medium",
             "api_key": api_keys["OPENAI"],
-            "api_type": "openai"
+            "api_type": "openai",
+            "max_tokens": 16000,
         })
     elif "gemini" in model:
         config.update({
             "api_key": api_keys["GEMINI"],
-            "api_type": "google"
+            "api_type": "google",
+            "max_tokens": 16000,
         })
     elif "claude" in model:
         # hep-theory fork: raised default max_tokens - autogen's own default
@@ -213,7 +221,8 @@ def get_model_config(model, api_keys):
     else:
         config.update({
             "api_key": api_keys["OPENAI"],
-            "api_type": "openai"
+            "api_type": "openai",
+            "max_tokens": 16000,
         })
     return config
 
