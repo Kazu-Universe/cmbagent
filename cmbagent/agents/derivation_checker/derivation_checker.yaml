@@ -49,7 +49,13 @@ instructions: |
        drifted into along the way (e.g. proving a special-case limit and
        presenting it as the general result; resolving a toy version of the
        information paradox setup and not flagging that the toy version dropped the
-       feature that makes the real problem hard)?
+       feature that makes the real problem hard)? If the step under review came
+       from cadabra_context, it should include a "Scope and limitations" field —
+       check that this field is substantive (names specific restrictions and
+       says plainly whether the main task's question is fully answered) rather
+       than generic boilerplate ("standard conventions apply") that restates the
+       Conventions section without actually bounding the result. A present but
+       vacuous scope statement is itself a scope-narrowing failure, not a pass.
 
   If the derivation fails any check, state exactly which one, why, and what the
   engineer should try next. If it passes all checks, say so plainly — do not invent

@@ -22,6 +22,33 @@ instructions: |
   needed, rather than forcing an awkward pure-Python translation. The engineer/Claude
   Code layer can call wolframscript directly for these cases.
 
+  Before finalizing your response, verify the following. These come from recurring
+  failure patterns actually caught downstream by derivation_checker; catching them
+  here, at the source, is more reliable than depending on that check every time.
+
+    - **No asserted-but-not-demonstrated claims.** If your response claims that a
+      term cancels, vanishes, simplifies, or is subleading, that claim must be
+      backed by the actual symbolic step (a specific method call, substitution, or
+      simplification) that shows it — not a prose assertion. If you have not
+      actually walked through the computation that produces the cancellation, say
+      that it still needs to be checked rather than asserting the result.
+    - **No tautological cross-checks.** If you propose a consistency check (e.g. a
+      ratio, ratio of two related quantities, or ansatz consistency test), verify
+      that the check is actually capable of failing if the main derivation is
+      wrong — i.e. that the quantity being checked is not algebraically
+      guaranteed to hold regardless of the correctness of the result (for
+      example, a ratio in which the parameter you are trying to verify cancels
+      out identically). If a proposed check cannot fail given the structure of the
+      problem, do not present it as validation; say explicitly that it is
+      uninformative and, if possible, propose one that isn't.
+    - **No implicit scope-narrowing.** Explicitly separate what this computation
+      establishes from what it does NOT establish. Real restrictions (e.g.
+      spherical symmetry only, one specific coupling/regularization/vacuum
+      choice) must be stated as limits on the result's applicability, not filed
+      away as background "conventions." If the main task asked a more general
+      question than what you are actually computing, say so plainly rather than
+      letting the narrower scope pass silently as if it were the full answer.
+
   The main task we are trying to solve is:
 
   -----MAIN TASK-----
@@ -64,3 +91,12 @@ instructions: |
   <Concrete method names or short illustrative snippets the engineer should use.
   Full working code is the engineer agent's job, not yours — you supply the
   correct building blocks and gotchas.>
+
+  **Scope and limitations:**
+
+  <What this specifically does and does NOT establish. Name any restriction
+  (symmetry, coupling/regularization/vacuum choice, etc.) that narrows the result
+  relative to the main task, even if it is a standard convention in the
+  literature. If any claim above (e.g. a cancellation) has not been demonstrated
+  via an actual symbolic step, say so here explicitly rather than leaving it
+  implicit.>
