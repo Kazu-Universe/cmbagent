@@ -104,8 +104,21 @@ def register_all_hand_offs(cmbagent_instance):
     # ============================================================================
 
     # plan_recorder: conditional routing based on feedback_left
-    # If feedback_left == 0, planning is complete -> go to terminator
-    # Otherwise, continue to plan_reviewer for feedback
+    # If feedback_left == 0, planning is complete.
+    # hep-theory fork: planning being complete does NOT always mean the run
+    # is done. For a genuine single-call planning_and_control run
+    # (mode == "planning_and_control", the CMBAgent __init__ default), this
+    # MUST hand off to controller so the control phase (engineer/researcher/
+    # inspirehep_context/cadabra_context/derivation_checker) actually runs -
+    # previously this branch always targeted terminator regardless of mode,
+    # so planning_and_control runs terminated immediately after planning and
+    # never reached the control phase at all.
+    # For deep_research's planning-only phase (mode == "deep_research", set
+    # explicitly on that CMBAgent instance in deep_research.py), terminator
+    # remains correct: deep_research's own outer Python loop takes over from
+    # there via separate solve() calls per plan step, and must not have
+    # plan_router redirect it into an in-process control phase instead.
+    # Otherwise, continue to plan_reviewer for feedback.
     # hep-theory fork: plan_router decoupling.
     # plan_recorder now hands off unconditionally to plan_router, so its own
     # Python logic (_record_plan_reply) actually gets to run and set
@@ -114,9 +127,11 @@ def register_all_hand_offs(cmbagent_instance):
     # feedback_left-based routing decision.
     agents['plan_recorder'].agent.handoffs.set_after_work(AgentTarget(agents['plan_router'].agent))
 
+    plan_complete_target = 'terminator' if mode == "deep_research" else 'controller'
+
     agents['plan_router'].agent.handoffs.add_context_conditions([
         OnContextCondition(
-            target=AgentTarget(agents['terminator'].agent),
+            target=AgentTarget(agents[plan_complete_target].agent),
             condition=ExpressionContextCondition(ContextExpression("${feedback_left} == 0")),
         ),
         OnContextCondition(

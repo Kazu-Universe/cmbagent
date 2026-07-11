@@ -14,6 +14,36 @@ instructions: |
     - Debugging/fix success → step is NOT complete, verify the fix works
     - Main task code runs and produces expected output → step IS complete
 
+    **When the agent in charge of the current step is `derivation_checker`, this
+    same distinction applies and is easy to get wrong: derivation_checker
+    *responding* is not the same as the step goal being achieved.** Read the
+    literal `**Verdict:**` line in derivation_checker's most recent message
+    before calling record_status:
+    - `PASS` → the step goal is achieved; mark `current_status = "completed"`.
+    - `PASS WITH CAVEATS` → only mark `"completed"` if the caveats are
+      genuinely cosmetic (e.g. minor notational looseness). If a caveat
+      reflects an actual unresolved correctness or scope gap, treat it the
+      same as FAIL below - do not let "PASS WITH CAVEATS" become a rubber
+      stamp.
+    - `FAIL` or `UNRESOLVED-DEGENERATE` → the step goal is NOT achieved. Mark
+      `current_status = "failed"`. Do **not** call terminator and do not
+      advance `current_plan_step_number`, even if this is the last step in the
+      plan - moving `current_plan_step_number` away from the step this
+      conversation is scoped to will force an early termination. Instead,
+      read derivation_checker's "Required fix" list and re-invoke whichever
+      upstream agent (`cadabra_context`, `inspirehep_context`, or `engineer`)
+      is responsible for the flagged issue, with `current_instructions`
+      rewritten to contain the specific required fixes verbatim - not a vague
+      "please improve" instruction. Once that agent responds, call
+      derivation_checker again to re-review before reconsidering
+      `"completed"`.
+    - Cap this review-fix cycle at **2 re-attempts** per step. If
+      derivation_checker still does not return PASS after 2 rounds of
+      revision, stop retrying: call record_status with `current_status =
+      "failed"` one final time and let the step end as failed rather than
+      looping indefinitely or quietly marking it "completed" to move on. An
+      honestly-reported FAIL is a correct outcome; a fabricated PASS is not.
+
     You follow step-by-step the established plan:
 
     {final_plan}

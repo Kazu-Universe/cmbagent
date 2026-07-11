@@ -50,6 +50,20 @@ def _update_context_variables(
     if current_status == "in progress":
         context_variables["code_execution_status"] = None
 
+    # hep-theory fork: hard-enforced counter for derivation_checker
+    # review-fix cycles (see derivation_review_attempts in context.py).
+    # Increment on every FAIL/UNRESOLVED-DEGENERATE recorded against
+    # derivation_checker's own step; reset whenever any step is recorded
+    # completed (a fresh step starts a fresh count). This is independent of
+    # the controller's own judgment - the routing functions below enforce
+    # the cap regardless of what the controller LLM decides to do next.
+    if current_status == "failed" and agent_for_sub_task == "derivation_checker":
+        context_variables["derivation_review_attempts"] = (
+            context_variables.get("derivation_review_attempts", 0) + 1
+        )
+    elif current_status == "completed":
+        context_variables["derivation_review_attempts"] = 0
+
 
 def _load_codebase_info(cmbagent_instance, context_variables: ContextVariables) -> str:
     """Load and format docstrings from codebase."""
@@ -148,6 +162,16 @@ def _determine_next_agent_human_in_loop(cmbagent_instance, context_variables: Co
             agent_to_transfer_to = cmbagent_instance.get_agent_from_name('engineer')
         elif context_variables["agent_for_sub_task"] == "researcher":
             agent_to_transfer_to = cmbagent_instance.get_agent_from_name('researcher_response_formatter')
+        elif context_variables["agent_for_sub_task"] in (
+            "derivation_checker", "cadabra_context", "inspirehep_context"
+        ):
+            # hep-theory fork: same rationale as _determine_next_agent_default -
+            # a derivation_checker FAIL/UNRESOLVED-DEGENERATE doesn't have a
+            # single fixed agent to hand back to. In this mode a human is
+            # already driving the loop, so surface the failure back to them
+            # (as "completed" already does above) rather than guessing which
+            # upstream agent to re-invoke automatically.
+            agent_to_transfer_to = cmbagent_instance.get_agent_from_name('admin')
 
     return agent_to_transfer_to
 
@@ -192,6 +216,36 @@ def _determine_next_agent_default(cmbagent_instance, context_variables: ContextV
             agent_to_transfer_to = cmbagent_instance.get_agent_from_name('engineer')
         elif context_variables["agent_for_sub_task"] == "researcher":
             agent_to_transfer_to = cmbagent_instance.get_agent_from_name('researcher_response_formatter')
+        elif context_variables["agent_for_sub_task"] in (
+            "derivation_checker", "cadabra_context", "inspirehep_context"
+        ):
+            # hep-theory fork: a "failed" status here means derivation_checker
+            # returned FAIL/UNRESOLVED-DEGENERATE on the current step's content
+            # (or, less commonly, cadabra_context/inspirehep_context themselves
+            # errored out). There is no single fixed agent to hand this back to
+            # the way engineer/researcher retry themselves - the correct next
+            # agent depends on which "Required fix" items derivation_checker
+            # raised, which only controller (reading current_instructions and
+            # the plan) can judge. Route explicitly back to controller rather
+            # than relying on the implicit agent_to_transfer_to=None fallback,
+            # so this path is documented and doesn't silently break if that
+            # fallback's default target ever changes. controller.yaml is
+            # responsible for then re-invoking the correct upstream agent
+            # (staying on the SAME current_plan_step_number - jumping back to
+            # an earlier step number will trigger the step-mismatch guard
+            # above and force an early terminator call).
+            #
+            # Hard-enforced retry cap: this does not rely on the controller
+            # LLM correctly following its own "cap at 2 re-attempts"
+            # instruction. Once derivation_review_attempts reaches
+            # max_derivation_review_attempts, force termination here in code,
+            # regardless of what controller would otherwise decide.
+            attempts = context_variables.get("derivation_review_attempts", 0)
+            max_attempts = context_variables.get("max_derivation_review_attempts", 3)
+            if attempts >= max_attempts:
+                agent_to_transfer_to = cmbagent_instance.get_agent_from_name('terminator')
+            else:
+                agent_to_transfer_to = cmbagent_instance.get_agent_from_name('controller')
 
     return agent_to_transfer_to
 
@@ -200,6 +254,14 @@ def _format_status_message(context_variables: ContextVariables, icon: str) -> st
     """Format the status message."""
     code_status = context_variables.get("code_execution_status", "N/A")
     step_status = context_variables.get("step_execution_status", "pending")
+    derivation_attempts = context_variables.get("derivation_review_attempts", 0)
+    max_derivation_attempts = context_variables.get("max_derivation_review_attempts", 3)
+    # hep-theory fork: only surface this line once at least one derivation
+    # review cycle has actually failed, so it doesn't clutter unrelated steps.
+    derivation_attempts_line = (
+        f"\n**Derivation review attempts:** {derivation_attempts} / {max_derivation_attempts}"
+        if derivation_attempts > 0 else ""
+    )
 
     return f"""
 **Step number:** {context_variables["current_plan_step_number"]} out of {context_variables["number_of_steps_in_plan"]}.
@@ -217,6 +279,7 @@ def _format_status_message(context_variables: ContextVariables, icon: str) -> st
 **Code execution status:** {code_status}
 
 **Step execution status:** {step_status}
+{derivation_attempts_line}
         """
 
 

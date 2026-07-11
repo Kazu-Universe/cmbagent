@@ -72,6 +72,16 @@ shared_context = {
     "n_attempts": 0,  # Number of failed code execution attempts
     "max_n_attempts": 3,
 
+    # hep-theory fork: hard-enforced cap on derivation_checker review-fix
+    # cycles, separate from n_attempts (which only tracks code-execution
+    # failures). Incremented whenever a step whose agent is derivation_checker
+    # is recorded as "failed"; reset to 0 whenever a step is recorded as
+    # "completed". Enforced in status.py's routing logic, not just in the
+    # controller's prompt, so a runaway auto-retry loop is not possible even
+    # if the controller LLM misjudges when to stop.
+    "derivation_review_attempts": 0,
+    "max_derivation_review_attempts": 3,  # initial review + 2 fix-and-recheck cycles
+
     # =========================================================================
     # Domain-Specific: AAS Keywords (Astronomy)
     # =========================================================================

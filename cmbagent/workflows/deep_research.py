@@ -243,7 +243,16 @@ def deep_research(
                 'planner': planner_config,
                 'plan_reviewer': plan_reviewer_config,
             },
-            api_keys=api_keys
+            api_keys=api_keys,
+            # hep-theory fork: without this, self.mode defaults to
+            # "planning_and_control" (CMBAgent's own __init__ default) - the
+            # SAME value a genuine single-call planning_and_control run gets.
+            # hand_offs.py's plan_router needs to tell these apart: this
+            # instance's planning phase must still hand off to terminator
+            # when done (the outer per-step loop below takes over from
+            # there), while a real planning_and_control run must hand off to
+            # controller instead. See hand_offs.py's plan_router setup.
+            mode="deep_research",
         )
         end_time = time.time()
         initialization_time_planning = end_time - start_time
@@ -408,6 +417,7 @@ def deep_research(
         ) or parsed_context.get('current_instructions')
         parsed_context["current_plan_step_number"] = step
         parsed_context["n_attempts"] = 0  # reset number of failures for each step
+        parsed_context["derivation_review_attempts"] = 0  # hep-theory fork: reset derivation_checker review-fix cycle count for each step
 
         start_time = time.time()
 
