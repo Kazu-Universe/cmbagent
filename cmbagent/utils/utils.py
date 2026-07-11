@@ -108,11 +108,21 @@ file_search_max_num_results = autogen.file_search_max_num_results
 
 default_max_round = 50
 
+# hep-theory fork: these two were never covered by
+# patch_default_agents_llm_model.py (that patch only touched the
+# default_agents_llm_model dict below). Any caller that doesn't explicitly
+# pass default_llm_model/default_formatter_model - e.g. a deep_research()
+# call that only overrides the per-agent *_model kwargs - silently fell back
+# to o3-mini here, which crashes under this codebase's current OpenAI
+# client call path (o3-mini requires max_completion_tokens instead of
+# max_tokens, raising openai.BadRequestError). Fixed at the source so no
+# future caller needs to remember to override these explicitly.
 # default_llm_model = 'gpt-4o-2024-11-20'
-default_llm_model = 'gpt-4.1-2025-04-14'
+# default_llm_model = 'gpt-4.1-2025-04-14'
 # default_llm_model = 'gpt-4o-mini'
 # default_llm_model = "gemini-2.0-flash"
-default_formatter_model = 'o3-mini-2025-01-31'
+default_llm_model = 'claude-sonnet-5'
+default_formatter_model = 'claude-haiku-4-5-20251001'
 
 
 
