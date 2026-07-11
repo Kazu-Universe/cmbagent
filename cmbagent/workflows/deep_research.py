@@ -440,19 +440,33 @@ def deep_research(
         # a _response_formatter companion, so the stripped-name lookup below
         # (built for camb_context's convention) never matched their real
         # output, silently leaving previous_steps_execution_summary empty.
+        # hep-theory fork: capture ALL content-bearing agents that spoke this
+        # step, not just the single plan-assigned agent - controller can
+        # invoke additional agents at its own discretion (e.g. re-checking
+        # literature via inspirehep_context mid-step), and their
+        # contributions were previously silently dropped if they weren't the
+        # one agent matching agent_for_step.
         original_agent_for_step = agent_for_step
         stripped_agent_for_step = agent_for_step.removesuffix("_context").removesuffix("_agent")
-        for msg in results['chat_history'][::-1]:
-            if 'name' in msg:
-                if (msg['name'] == original_agent_for_step
-                        or msg['name'] == stripped_agent_for_step
-                        or msg['name'] == f"{stripped_agent_for_step}_nest"
-                        or msg['name'] == f"{stripped_agent_for_step}_response_formatter"):
-                    this_step_execution_summary = msg['content']
-                    summary = f"### Step {step}\n{this_step_execution_summary.strip()}"
-                    step_summaries.append(summary)
-                    cmbagent.final_context['previous_steps_execution_summary'] = "\n\n".join(step_summaries)
-                    break
+        watched_names = {
+            "engineer", "researcher", "cadabra_context",
+            "inspirehep_context", "derivation_checker",
+            original_agent_for_step, stripped_agent_for_step,
+            f"{stripped_agent_for_step}_nest",
+            f"{stripped_agent_for_step}_response_formatter",
+        }
+        agent_msgs = {}
+        for msg in results['chat_history']:
+            name = msg.get('name')
+            msg_content = (msg.get('content') or '').strip()
+            if name in watched_names and msg_content:
+                agent_msgs[name] = msg_content  # overwrite -> last message per agent wins
+        if agent_msgs:
+            parts = [f"#### {name}\n{c}" for name, c in agent_msgs.items()]
+            this_step_execution_summary = "\n\n".join(parts)
+            summary = f"### Step {step}\n{this_step_execution_summary.strip()}"
+            step_summaries.append(summary)
+            cmbagent.final_context['previous_steps_execution_summary'] = "\n\n".join(step_summaries)
 
         print("previous_steps_execution_summary: \n", cmbagent.final_context['previous_steps_execution_summary'])
 
