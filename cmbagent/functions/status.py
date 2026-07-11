@@ -376,6 +376,26 @@ def create_record_status_starter(cmbagent_instance):
 
         current_status = "in progress"
 
+        # BUG FIX (hep-theory fork): this function previously computed the
+        # local `current_status = "in progress"` above but never wrote it
+        # into context_variables before checking
+        # context_variables["current_status"] a few lines down - so the
+        # check always saw whatever the PREVIOUS step left behind (always
+        # "completed", from a normal step ending), never "in progress".
+        # Confirmed via direct reproduction: this caused a deterministic
+        # crash (AttributeError: 'NoneType' object has no attribute 'name',
+        # from AgentTarget(None)) at the start of EVERY step after step 1 in
+        # deep_research() runs - control_starter would retry
+        # record_status_starter repeatedly, sometimes recovering later in
+        # the conversation via a different tool call, sometimes (as
+        # observed) never recovering within max_rounds_control, burning the
+        # entire round budget on nothing but this error with zero actual
+        # step content produced. Fixed by actually writing the intended
+        # status before checking it - this function's whole purpose is to
+        # kick off a fresh step by handing off to agent_for_sub_task, so
+        # there is no legitimate case where it should NOT do that.
+        context_variables["current_status"] = current_status
+
         # Map statuses to icons
         status_icons = {
             "completed": "✅",
