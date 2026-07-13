@@ -360,7 +360,23 @@ def deep_research(
 
     current_context = copy.deepcopy(planning_output) if restart_at_step <= 0 else load_context(os.path.join(context_dir, f"context_step_{restart_at_step-1}.pkl"))
     number_of_steps_in_plan = current_context['number_of_steps_in_plan']
-    step_summaries = []
+
+    # BUG FIX (hep-theory fork): step_summaries previously always started as
+    # an empty list, even when restart_at_step > 0. Since
+    # previous_steps_execution_summary is rebuilt every step as
+    # "\n\n".join(step_summaries), restarting silently discarded every prior
+    # step's content from every subsequent step's context - confirmed via a
+    # real run where derivation_checker (step 4, after a restart_at_step=2
+    # resume) genuinely never received step 1's cadabra_context output, and
+    # correctly reported gaps as "NOT REVIEWABLE" as a result. The already-
+    # computed summary text from the resumed step's pickled context is not
+    # separable back into a list of individual per-step entries (it was only
+    # ever stored pre-joined), so it is seeded here as a single existing
+    # entry - later steps' summaries still append normally after it.
+    if restart_at_step > 0 and current_context.get('previous_steps_execution_summary'):
+        step_summaries = [current_context['previous_steps_execution_summary']]
+    else:
+        step_summaries = []
 
     initial_step = 1 if restart_at_step <= 0 else restart_at_step
 
