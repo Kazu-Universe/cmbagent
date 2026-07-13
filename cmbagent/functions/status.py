@@ -34,6 +34,19 @@ def _update_context_variables(
     agent_for_sub_task: str
 ) -> None:
     """Update context variables with current step information."""
+    # BUG FIX (hep-theory fork): capture the OLD agent_for_sub_task before
+    # overwriting it. Confirmed via a real run that controller, when
+    # recording a "failed" status after a derivation_checker FAIL, commonly
+    # sets agent_for_sub_task to the NEXT agent it's about to invoke (e.g.
+    # "cadabra_context") in the SAME record_status call, not to
+    # "derivation_checker" itself - a reasonable, natural reading of the
+    # field that the increment check below did not originally account for,
+    # which meant derivation_review_attempts silently never incremented on
+    # a real FAIL. Checking the PREVIOUS value (who the step was actually
+    # assigned to when it failed) is correct regardless of which agent
+    # controller names as the next hop.
+    previous_agent_for_sub_task = context_variables.get("agent_for_sub_task")
+
     context_variables["current_plan_step_number"] = current_plan_step_number
     context_variables["current_sub_task"] = current_sub_task
     context_variables["agent_for_sub_task"] = agent_for_sub_task
@@ -57,7 +70,7 @@ def _update_context_variables(
     # completed (a fresh step starts a fresh count). This is independent of
     # the controller's own judgment - the routing functions below enforce
     # the cap regardless of what the controller LLM decides to do next.
-    if current_status == "failed" and agent_for_sub_task == "derivation_checker":
+    if current_status == "failed" and previous_agent_for_sub_task == "derivation_checker":
         context_variables["derivation_review_attempts"] = (
             context_variables.get("derivation_review_attempts", 0) + 1
         )
@@ -194,14 +207,32 @@ def _determine_next_agent_default(cmbagent_instance, context_variables: ContextV
 
     if "in progress" in context_variables["current_status"]:
         agent_name = context_variables["agent_for_sub_task"]
+
+        # BUG FIX (hep-theory fork): this used to check the mismatch below
+        # and force terminator, AFTER already computing agent_to_transfer_to
+        # above - now it clamps and corrects first. Confirmed via a real
+        # run: controller, after correctly detecting a derivation_checker
+        # FAIL and correctly re-invoking the responsible upstream agent,
+        # mistakenly set current_plan_step_number back to the ORIGINAL
+        # step being redone (e.g. 1, for "I am redoing step 1's work")
+        # rather than leaving it at the step THIS conversation is scoped to
+        # (e.g. 4) - an understandable field-meaning ambiguity for an LLM,
+        # not a case that ever legitimately needs a different step number
+        # within a single deep_research() solve() call. The mismatch guard
+        # then force-terminated the run immediately, discarding a freshly
+        # regenerated derivation that had not yet been forwarded back to
+        # derivation_checker for re-review. There is no legitimate scenario
+        # in this architecture where current_plan_step_number should differ
+        # from cmbagent_instance.step within one solve() call, so silently
+        # correcting it and continuing is strictly safer than terminating.
+        if cmbagent_instance.mode == "deep_research" and \
+           context_variables["current_plan_step_number"] != cmbagent_instance.step:
+            context_variables["current_plan_step_number"] = cmbagent_instance.step
+
         if agent_name in agent_transfer_map:
             transfer_flag = agent_transfer_map[agent_name]
             context_variables[transfer_flag] = True
             agent_to_transfer_to = cmbagent_instance.get_agent_from_name(agent_name)
-
-        if cmbagent_instance.mode == "deep_research" and \
-           context_variables["current_plan_step_number"] != cmbagent_instance.step:
-            agent_to_transfer_to = cmbagent_instance.get_agent_from_name('terminator')
 
     if "completed" in context_variables["current_status"]:
         if context_variables["current_plan_step_number"] == context_variables["number_of_steps_in_plan"]:

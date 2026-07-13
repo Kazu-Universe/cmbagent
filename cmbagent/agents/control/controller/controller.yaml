@@ -37,6 +37,16 @@ instructions: |
       "please improve" instruction. Once that agent responds, call
       derivation_checker again to re-review before reconsidering
       `"completed"`.
+      **Concrete example of the two fields people most often get wrong
+      here:** if this is step 4 of the plan and derivation_checker FAILs it
+      because step 1's derivation was never actually produced, do NOT set
+      `current_plan_step_number` to `1` to mean "I am now redoing step 1's
+      work" - this field means "which step number THIS CONVERSATION is
+      scoped to," which is still `4`, unchanged, regardless of which
+      original step's content you are asking an agent to regenerate. Every
+      `record_status` call for the rest of this conversation, including the
+      one that re-invokes `cadabra_context`, must keep
+      `current_plan_step_number = 4`.
     - Cap this review-fix cycle at **2 re-attempts** per step. If
       derivation_checker still does not return PASS after 2 rounds of
       revision, stop retrying: call record_status with `current_status =
