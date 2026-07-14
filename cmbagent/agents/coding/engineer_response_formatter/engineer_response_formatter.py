@@ -3,6 +3,48 @@ import re
 from cmbagent.base_agent import BaseAgent
 from pydantic import BaseModel, Field
 from typing import Optional
+
+
+# hep-theory fork: module-level config for code-history preservation mode.
+# Set once per run by cmbagent.py's solve(), right after it computes
+# codebase_full_path - format() below (a method on a nested Pydantic model,
+# not on BaseAgent itself) has no other way to know the actual codebase/
+# directory path or the chosen mode, since it only ever sees the fields the
+# LLM produced (filename, relative_path, etc.), not agent-level state.
+_codebase_abs_path = None
+_code_history_mode = "overwrite"  # "overwrite" | "unique"
+
+
+def set_code_history_config(codebase_abs_path: str, mode: str = "overwrite") -> None:
+    """
+    Configure how EngineerResponseFormatterAgent.format() resolves filename
+    collisions for code saved under codebase/.
+
+    mode="overwrite" (default, matches the original behavior): trust the
+    LLM's chosen step_{current_plan_step_number}.py filename as-is. Multiple
+    code executions that share the same current_plan_step_number (e.g. a
+    mid-step retry after a derivation_checker FAIL, or two separate
+    executions within one continuous engineer turn) will silently overwrite
+    one another - only the final version survives on disk. Confirmed via a
+    real test: this is deterministic, not LLM whim - the prompt explicitly
+    instructs "MUST be step_{current_plan_step_number}.py". Good for keeping
+    codebase/ as a clean "what actually worked" folder; the full text of
+    every attempt still exists in control/chats/chat_history_step_*.json
+    either way, just not as standalone .py files.
+
+    mode="unique": if the LLM's chosen filename would collide with an
+    existing file already on disk, auto-append a "_v2", "_v3", ... suffix
+    (checked against the real filesystem, not a counter the LLM has to get
+    right) until a non-colliding name is found, so every execution's code is
+    preserved as its own file. Good for a full audit trail across retries,
+    at the cost of a messier codebase/ folder with superseded attempts left
+    in it.
+    """
+    global _codebase_abs_path, _code_history_mode
+    _codebase_abs_path = codebase_abs_path
+    _code_history_mode = mode
+
+
 class EngineerResponseFormatterAgent(BaseAgent):
     
     def __init__(self, llm_config=None, **kwargs):
@@ -282,6 +324,25 @@ class EngineerResponseFormatterAgent(BaseAgent):
                 full_path = os.path.join(cleaned_path, os.path.basename(final_filename))
             else:
                 full_path = final_filename
+
+            # hep-theory fork: optional collision-avoidance. See
+            # set_code_history_config()'s docstring above for the two modes.
+            # This checks the REAL filesystem state at format-time, so it
+            # works regardless of what filename the LLM actually chose -
+            # unlike relying on the LLM to track and increment a counter
+            # itself, which isn't reliable (confirmed: two separate code
+            # executions in one turn both produced "step_1.py" even when
+            # explicitly told to use two distinct executions).
+            if _code_history_mode == "unique" and _codebase_abs_path:
+                abs_target = os.path.join(_codebase_abs_path, os.path.basename(full_path))
+                if os.path.exists(abs_target):
+                    base, ext = os.path.splitext(full_path)
+                    version = 2
+                    while os.path.exists(
+                        os.path.join(_codebase_abs_path, os.path.basename(f"{base}_v{version}{ext}"))
+                    ):
+                        version += 1
+                    full_path = f"{base}_v{version}{ext}"
 
             # Preamble: filename comment + sys.path for codebase imports
             preamble_lines = [

@@ -691,6 +691,19 @@ class CMBAgent:
         os.makedirs(database_full_path, exist_ok=True)
         os.makedirs(codebase_full_path, exist_ok=True)
 
+        # hep-theory fork: tell engineer_response_formatter's module-level
+        # config where codebase/ actually lives and which collision mode to
+        # use, since format() (a method on a nested Pydantic model) has no
+        # other way to learn this - it only ever sees the fields the LLM
+        # produced, not agent-level state like self.work_dir.
+        from cmbagent.agents.coding.engineer_response_formatter.engineer_response_formatter import (
+            set_code_history_config,
+        )
+        set_code_history_config(
+            codebase_full_path,
+            this_shared_context.get("code_history_mode", "overwrite"),
+        )
+
         os.makedirs(chat_full_path, exist_ok=True)
         os.makedirs(time_full_path, exist_ok=True)
         os.makedirs(cost_full_path, exist_ok=True)

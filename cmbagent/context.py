@@ -51,6 +51,16 @@ shared_context = {
     # =========================================================================
     "database_path": "data/",
     "codebase_path": "codebase/",
+    # hep-theory fork: how engineer_response_formatter resolves filename
+    # collisions in codebase/ when multiple code executions share the same
+    # step_{current_plan_step_number}.py name (e.g. mid-step retries).
+    # "overwrite" (default, matches original behavior): only the final
+    # version survives on disk - clean "what actually worked" folder.
+    # "unique": auto-suffix (_v2, _v3, ...) on collision instead of
+    # overwriting - preserves every attempt's code for a full audit trail,
+    # at the cost of a messier folder. See engineer_response_formatter.py's
+    # set_code_history_config() for the actual mechanism.
+    "code_history_mode": "overwrite",
 
     # =========================================================================
     # Codebase Tracking

@@ -130,6 +130,10 @@ def deep_research(
     clear_work_dir=False,
     researcher_filename=shared_context_default['researcher_filename'],
     custom_executor=None,
+    # hep-theory fork: "overwrite" (default, original behavior) or "unique".
+    # See engineer_response_formatter.py's set_code_history_config() for
+    # the full explanation of what each mode does.
+    code_history_mode=shared_context_default.get('code_history_mode', 'overwrite'),
 ):
     """Execute a complex research task with planning and multi-step execution.
 
@@ -272,7 +276,8 @@ def deep_research(
                 'researcher_append_instructions': researcher_instructions,
                 'plan_reviewer_append_instructions': plan_instructions,
                 'hardware_constraints': hardware_constraints,
-                'researcher_filename': researcher_filename
+                'researcher_filename': researcher_filename,
+                'code_history_mode': code_history_mode,
             }
         )
         end_time = time.time()
@@ -360,6 +365,14 @@ def deep_research(
 
     current_context = copy.deepcopy(planning_output) if restart_at_step <= 0 else load_context(os.path.join(context_dir, f"context_step_{restart_at_step-1}.pkl"))
     number_of_steps_in_plan = current_context['number_of_steps_in_plan']
+
+    # hep-theory fork: on a restart_at_step resume, the loaded pickled
+    # context could carry a stale code_history_mode from whenever that run
+    # was first started (or be missing it entirely, for a pre-existing run
+    # from before this setting existed). The explicit parameter to THIS
+    # call should always take effect, e.g. resuming in "unique" mode even
+    # though the original run started in "overwrite" mode.
+    current_context['code_history_mode'] = code_history_mode
 
     # BUG FIX (hep-theory fork): step_summaries previously always started as
     # an empty list, even when restart_at_step > 0. Since
