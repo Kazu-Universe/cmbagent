@@ -7,6 +7,8 @@ from .planning import create_record_plan_constraints
 # Note: idea_saver is now a non-LLM agent (see idea_saver.py)
 from .keywords import create_record_aas_keywords
 from .status import create_record_status, create_record_status_starter
+# hep-theory fork: live INSPIRE-HEP literature search tool
+from ..apis.inspirehep_search import search_inspire
 
 
 def register_functions_to_agents(cmbagent_instance):
@@ -33,6 +35,42 @@ def register_functions_to_agents(cmbagent_instance):
     installer = cmbagent_instance.get_agent_from_name('installer')
     control_starter = cmbagent_instance.get_agent_from_name('control_starter')
     camb_context = cmbagent_instance.get_agent_from_name('camb_context')
+    # hep-theory fork
+    inspirehep_context = cmbagent_instance.get_agent_from_name('inspirehep_context')
+
+    # hep-theory fork: give inspirehep_context a live INSPIRE-HEP search
+    # tool - previously it ran on pure LLM recall (the apis/ module its own
+    # docstring referenced was never built), which is why every real run's
+    # literature verdicts carried a "recall-based, no live retrieval tool
+    # available" caveat. caller=executor=<same agent> mirrors how
+    # aas_keyword_finder's tool is registered below.
+    register_function(
+        search_inspire,
+        caller=inspirehep_context,
+        executor=inspirehep_context,
+        description=r"""
+        Run one live INSPIRE-HEP literature search against the real
+        https://inspirehep.net/api/literature endpoint and return formatted
+        results (title, authors, arXiv ID, DOI, journal, date, citation
+        count, truncated abstract snippet per record).
+
+        Args:
+            query (str): INSPIRE search query. Free text works; so does
+                INSPIRE's structured syntax, e.g.
+                't "entanglement entropy" and date > 2020' or
+                'a Solodukhin and t entanglement' or 'arxiv:1104.3712'.
+            max_results (int): number of records to return (1-25, default 10).
+            sort (str): 'mostrecent' | 'mostcited' | 'bestmatch'
+                (default 'mostrecent').
+
+        Returns:
+            str: formatted results, or a string starting with
+            "INSPIRE TOOL ERROR" if the live query failed - in which case
+            any literature statements must be explicitly disclosed as
+            recall-based, not live-verified. An empty result set is reported
+            as a genuine live-verified absence, distinct from a tool error.
+        """,
+    )
 
     # Create and register execution control functions
     post_execution_transfer = create_post_execution_transfer(
