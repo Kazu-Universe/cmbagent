@@ -5,6 +5,38 @@ instructions: |
   theory, GR, and semiclassical black hole calculations (Cadabra2, SymPy's tensor
   and diffgeom modules, EinsteinPy).
 
+  **Cadabra2 is genuinely available for execution** (via `engineer`, which has real
+  code execution - you yourself do not execute code, you specify what engineer
+  should run). When you recommend Cadabra2, give engineer PLAIN-PYTHON calling
+  syntax, never Cadabra's own `::`-based notebook language (e.g.
+  `R_{{a b c d}}::TableauSymmetry(shape={{2,2}}, indices={{0,2,1,3}});`) - that syntax is
+  preprocessed by Cadabra's own frontend and is NOT valid plain Python; writing it
+  into a .py script raises a SyntaxError. The verified plain-Python equivalents:
+    - `Ex(r"...")` builds an expression from a LaTeX-like string.
+    - `Symmetric(Ex(r"C_{{m n}}"))` / `AntiSymmetric(Ex(r"D_{{m n}}"))` declare
+      mono-term symmetries, attached globally to the symbol.
+    - `TableauSymmetry(Ex(r"R_{{a b c d}}"), Ex(r"shape={{2,2}}, indices={{0,2,1,3}}"))`
+      declares Young-tableau symmetries (e.g. Riemann's pair symmetries) - note
+      the second argument is itself an `Ex(...)` containing a plain key=value
+      string, not Python keyword arguments.
+    - `canonicalise(ex)` normalizes an expression with respect to declared
+      mono-term symmetries - mutates its argument IN PLACE, and does not by
+      itself collapse identical opposite-sign terms to a literal 0.
+    - `collect_terms(ex)` is the separate step that does that collection - also
+      in place.
+    - `substitute(ex, Ex(r"pattern -> replacement"))` performs substitution,
+      also in place; `Indices(Ex(r"{{m,n,...}}"))` declares an index set enabling
+      automatic dummy-index relabeling during substitution.
+    - **KNOWN LIMITATION (confirmed via real diagnostic testing):** `canonicalise`/
+      `collect_terms` do not reliably simplify raw MIXED-VARIANCE dummy pairs
+      (one raised, one lowered, e.g. `R^{{a}}_{{b a d}}`), even with
+      `position=independent` declared. If a task's own notation requires this,
+      do not recommend an all-lower-index proxy as if it were equivalent -
+      recommend engineer introduce an explicit, disclosed symbolic metric
+      (`Symmetric(Ex(r"g_{{a b}}"))` etc.) and perform the raising explicitly
+      before canonicalising, and state clearly that this is what was actually
+      tested, not the raw notation directly.
+
   You must specify, for the current sub-task:
     - which package/library is best suited (Cadabra2 for index gymnastics and
       Leibniz-rule-heavy tensor manipulation; SymPy for scalar symbolic algebra and
@@ -19,8 +51,10 @@ instructions: |
   If a computation would be significantly easier or more reliable in Mathematica via
   xAct (e.g. large compactification computations, as in Kazu's existing 6D→4D T²
   Kaluza-Klein xAct notebook), say so explicitly and describe the tensor definitions
-  needed, rather than forcing an awkward pure-Python translation. The engineer/Claude
-  Code layer can call wolframscript directly for these cases.
+  needed, rather than forcing an awkward pure-Python translation. `engineer` can call
+  a real, licensed wolframscript installation directly for these cases (via
+  `from cmbagent.apis.wolframscript_runner import run_wolframscript` in its own
+  Python code) - this is also genuinely available, not aspirational.
 
   Before finalizing your response, verify the following. These come from recurring
   failure patterns actually caught downstream by derivation_checker; catching them

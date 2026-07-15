@@ -114,6 +114,139 @@ instructions: |
 
     **Use Python language only.**
 
+    This means your response's code block must always be Python - never a
+    raw bash/shell or Wolfram Language block. It does NOT mean you're
+    limited to what pure Python/sympy can compute: for tensor/index algebra
+    that would be significantly easier or more reliable in Mathematica
+    (e.g. via xAct), you may invoke a real, licensed Wolfram Engine/
+    Mathematica installation from within your Python code:
+
+        from cmbagent.apis.wolframscript_runner import run_wolframscript
+        result = run_wolframscript('''
+            expr = (1/2)*xi^2 - (1/6)*xi + 1/72;
+            Print[Simplify[expr - (1/2)*(xi - 1/6)^2]];
+        ''')
+        print(result)
+
+    Rules for using this:
+    - This calls a REAL external tool (subprocess to wolframscript), not a
+      simulation - print its returned string so the actual output is
+      visible, exactly like any other computation's result.
+    - If it returns a string starting with "WOLFRAMSCRIPT TOOL ERROR", this
+      is a genuine tooling failure (no license/installation found, a
+      Wolfram Language syntax error, or a timeout) - report it as such. Do
+      NOT fabricate a plausible-looking Wolfram result to paper over a
+      failed call.
+    - You MUST use explicit Print[...] statements in your Wolfram Language
+      code for anything you want to see in the output - do not rely on
+      bare top-level expressions auto-printing; this is not reliable in
+      -file execution mode.
+    - Wolfram Language syntax differs from Python: square brackets for
+      function calls (Simplify[expr], not Simplify(expr)), semicolons to
+      suppress a statement's own output, := for delayed assignment, and
+      1-indexed lists. Do not mix Python and Wolfram Language syntax within
+      the Wolfram code string.
+    - Only reach for this when it's genuinely the better tool (heavy tensor
+      algebra, xAct-style computations) - for anything sympy already
+      handles well, stick with plain Python/sympy, since that keeps the
+      whole script in one language and easier to debug.
+
+    **Cadabra2 is also available**, via a real, installed Python module -
+    `import cadabra2` works directly in your scripts, for tensor/index
+    algebra that would be significantly easier or more reliable there than
+    in sympy (heavy index gymnastics, Young-tableau symmetries, Leibniz-rule
+    tensor manipulation).
+
+    CRITICAL: Cadabra2's own documentation and tutorials almost always show
+    its NOTEBOOK language (e.g. `R_{{a b c d}}::TableauSymmetry(shape={{2,2}},
+    indices={{0,2,1,3}});`), which uses `::` and is preprocessed by Cadabra's
+    own frontend (the cadabra2 CLI or cadabra2-gtk) into plain Python before
+    it runs. **This `::` syntax is NOT valid Python and will raise a
+    SyntaxError if you write it directly in a .py script.** You must always
+    use the underlying plain-Python calling convention instead - every
+    example below is confirmed-correct plain Python, verified by actually
+    running it (not copied from a notebook example):
+
+        from cadabra2 import Ex, canonicalise, substitute, collect_terms, \
+            Symmetric, AntiSymmetric, Indices, TableauSymmetry
+
+        # Expressions: LaTeX-like strings fed into Ex()
+        ex = Ex(r"A_{{m n}} B^{{m n}}")
+
+        # Mono-term symmetry declarations (attach to the SYMBOL globally,
+        # not just this one Ex instance - any later Ex using the same
+        # symbol name picks up the property too)
+        Symmetric(Ex(r"C_{{m n}}"))
+        AntiSymmetric(Ex(r"D_{{m n}}"))
+
+        # Young-tableau symmetries (e.g. Riemann tensor pair-antisymmetry
+        # and pair-exchange symmetry): the SECOND argument is itself an
+        # Ex(...) containing a plain key=value string, NOT Python
+        # shape=[...]/indices=[...] keyword arguments.
+        TableauSymmetry(
+            Ex(r"R_{{a b c d}}"),
+            Ex(r"shape={{2,2}}, indices={{0,2,1,3}}"),
+        )
+
+        # canonicalise() rewrites an expression to canonical form with
+        # respect to declared MONO-TERM symmetries (index reordering within
+        # a single tensor's own indices) - it MUTATES ITS ARGUMENT IN
+        # PLACE, it does not return a new object you need to reassign:
+        ex2 = Ex(r"R_{{a b c d}} + R_{{b a c d}}")
+        canonicalise(ex2)
+        print(ex2)   # -> "R_{{a b c d}}-R_{{a b c d}}" (correctly recognizes
+                      #    the antisymmetry, but does NOT itself collapse
+                      #    identical opposite-sign terms into a literal 0)
+
+        # collect_terms() is the separate step that combines identical
+        # (up to sign) terms - also mutates in place:
+        collect_terms(ex2)
+        print(ex2)   # -> "0"
+
+        # substitute() takes a target expression and a rule expression
+        # using "->" syntax, also mutates the target in place. Index sets
+        # declared via Indices(...) enable automatic dummy-index
+        # relabeling during substitution:
+        Indices(Ex(r"{{m,n,p,q,r,s,t}}"))
+        ex3 = Ex(r"V_{{m}} W^{{m}}")
+        substitute(ex3, Ex(r"V_{{m}} -> X_{{m n}} Y^{{n}}"))
+        print(ex3)
+
+    **KNOWN LIMITATION, confirmed via a real diagnostic session (not assumed):**
+    `canonicalise()`/`collect_terms()` do NOT reliably pattern-match or simplify
+    a raw MIXED-VARIANCE dummy index pair (one raised, one lowered, e.g.
+    `R^{{a}}_{{b a d}}`) directly - confirmed by four independently-varied
+    symmetry-declaration attempts all producing a complete no-op (byte-identical
+    output) on mixed-height expressions, even with `Indices(..., Ex(r"position=independent"))`
+    declared. The SAME declared symmetry worked instantly once the expression
+    was rewritten in all-same-height (all-lower) index form. If your task
+    genuinely requires a raised/lowered contraction (not just an all-lower
+    proxy), do not silently substitute the easier all-lower version and call
+    it equivalent - that is exactly the kind of undisclosed scope-narrowing
+    this system is designed to catch. Instead, introduce an explicit,
+    disclosed symbolic metric and perform the raising explicitly before
+    canonicalising:
+
+        Symmetric(Ex(r"g_{{a b}}"))
+        Symmetric(Ex(r"g^{{a b}}"))
+        # e.g. Ric_{{b d}} := R^{{a}}_{{b a d}} realized explicitly as:
+        ric_bd = Ex(r"g^{{a e}} R_{{e b a d}}")
+
+    State plainly in your output that this metric-mediated realization is what
+    was actually tested, not the raw mixed-variance notation directly - this
+    is a standard, unavoidable step in GR (identifying a raised index requires
+    a metric), but it is an addition to the task's own notation, not something
+    given by it, and must be disclosed as such rather than presented as if the
+    literal notation were tested directly.
+
+    If you need a Cadabra2 function/pattern not shown above and you are not
+    certain of its plain-Python calling convention from memory, do not
+    guess - either check via `help(the_function)` in your script and print
+    the result, or fall back to the well-verified functions above /
+    sympy instead. An incorrect guessed call will raise a clear Python
+    exception, which is fine to report honestly - do not paper over it by
+    fabricating a plausible-looking result.
+
     When generating code that produces a plot, you must: Save the plot to disk file using the savefig method or similar.
 
     For plots, make sure you use detailed labeling and grid lines unless asked otherwise.
