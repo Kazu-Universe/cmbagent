@@ -473,97 +473,103 @@ def deep_research(
             print(f"in deep_research: number of failures: {number_of_failures} >= max_n_attempts: {cmbagent.final_context['max_n_attempts']}. Exiting.")
             break
 
-        # Collect step summaries
-        # hep-theory fork: check original unstripped agent name - fixes
-        # custom agents (inspirehep_context, cadabra_context) that don't have
-        # a _response_formatter companion, so the stripped-name lookup below
-        # (built for camb_context's convention) never matched their real
-        # output, silently leaving previous_steps_execution_summary empty.
-        # hep-theory fork: capture ALL content-bearing agents that spoke this
-        # step, not just the single plan-assigned agent - controller can
-        # invoke additional agents at its own discretion (e.g. re-checking
-        # literature via inspirehep_context mid-step), and their
-        # contributions were previously silently dropped if they weren't the
-        # one agent matching agent_for_step.
-        original_agent_for_step = agent_for_step
-        stripped_agent_for_step = agent_for_step.removesuffix("_context").removesuffix("_agent")
-        watched_names = {
-            "engineer", "researcher", "cadabra_context",
-            "inspirehep_context", "derivation_checker",
-            original_agent_for_step, stripped_agent_for_step,
-            f"{stripped_agent_for_step}_nest",
-            f"{stripped_agent_for_step}_response_formatter",
-        }
-        agent_msgs = {}
-        for msg in results['chat_history']:
-            name = msg.get('name')
-            msg_content = (msg.get('content') or '').strip()
-            if name in watched_names and msg_content:
-                agent_msgs[name] = msg_content  # overwrite -> last message per agent wins
-        if agent_msgs:
-            parts = [f"#### {name}\n{c}" for name, c in agent_msgs.items()]
-            this_step_execution_summary = "\n\n".join(parts)
-            summary = f"### Step {step}\n{this_step_execution_summary.strip()}"
-            step_summaries.append(summary)
-            cmbagent.final_context['previous_steps_execution_summary'] = "\n\n".join(step_summaries)
+        try:
+            # Collect step summaries
+            # hep-theory fork: check original unstripped agent name - fixes
+            # custom agents (inspirehep_context, cadabra_context) that don't have
+            # a _response_formatter companion, so the stripped-name lookup below
+            # (built for camb_context's convention) never matched their real
+            # output, silently leaving previous_steps_execution_summary empty.
+            # hep-theory fork: capture ALL content-bearing agents that spoke this
+            # step, not just the single plan-assigned agent - controller can
+            # invoke additional agents at its own discretion (e.g. re-checking
+            # literature via inspirehep_context mid-step), and their
+            # contributions were previously silently dropped if they weren't the
+            # one agent matching agent_for_step.
+            original_agent_for_step = agent_for_step
+            stripped_agent_for_step = agent_for_step.removesuffix("_context").removesuffix("_agent")
+            watched_names = {
+                "engineer", "researcher", "cadabra_context",
+                "inspirehep_context", "derivation_checker",
+                original_agent_for_step, stripped_agent_for_step,
+                f"{stripped_agent_for_step}_nest",
+                f"{stripped_agent_for_step}_response_formatter",
+            }
+            agent_msgs = {}
+            for msg in results['chat_history']:
+                name = msg.get('name')
+                msg_content = (msg.get('content') or '').strip()
+                if name in watched_names and msg_content:
+                    agent_msgs[name] = msg_content  # overwrite -> last message per agent wins
+            if agent_msgs:
+                parts = [f"#### {name}\n{c}" for name, c in agent_msgs.items()]
+                this_step_execution_summary = "\n\n".join(parts)
+                summary = f"### Step {step}\n{this_step_execution_summary.strip()}"
+                step_summaries.append(summary)
+                cmbagent.final_context['previous_steps_execution_summary'] = "\n\n".join(step_summaries)
 
-        print("previous_steps_execution_summary: \n", cmbagent.final_context['previous_steps_execution_summary'])
+            print("previous_steps_execution_summary: \n", cmbagent.final_context['previous_steps_execution_summary'])
 
-        current_context = copy.deepcopy(cmbagent.final_context)
+            current_context = copy.deepcopy(cmbagent.final_context)
 
-        results['initialization_time_control'] = initialization_time_control
-        results['execution_time_control'] = execution_time_control
+            results['initialization_time_control'] = initialization_time_control
+            results['execution_time_control'] = execution_time_control
 
-        # Save timing report as JSON
-        timing_report = {
-            'initialization_time_control': initialization_time_control,
-            'execution_time_control': execution_time_control,
-            'total_time': initialization_time_control + execution_time_control
-        }
+            # Save timing report as JSON
+            timing_report = {
+                'initialization_time_control': initialization_time_control,
+                'execution_time_control': execution_time_control,
+                'total_time': initialization_time_control + execution_time_control
+            }
 
-        # Add timestamp
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        timing_path = os.path.join(current_context['work_dir'], f"time/timing_report_step_{step}_{timestamp}.json")
-        write_file_with_sync(
-            timing_path,
-            json.dumps(timing_report, indent=2),
-            str(control_dir),  # Use control_dir since executor.work_dir is control_dir
-            custom_executor
-        )
+            # Add timestamp
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            timing_path = os.path.join(current_context['work_dir'], f"time/timing_report_step_{step}_{timestamp}.json")
+            write_file_with_sync(
+                timing_path,
+                json.dumps(timing_report, indent=2),
+                str(control_dir),  # Use control_dir since executor.work_dir is control_dir
+                custom_executor
+            )
 
-        print(f"\nTiming report data saved to: {timing_path}\n")
+            print(f"\nTiming report data saved to: {timing_path}\n")
 
-        # Create a dummy groupchat attribute if it doesn't exist
-        if not hasattr(cmbagent, 'groupchat'):
-            Dummy = type('Dummy', (object,), {'new_conversable_agents': []})
-            cmbagent.groupchat = Dummy()
+            # Create a dummy groupchat attribute if it doesn't exist
+            if not hasattr(cmbagent, 'groupchat'):
+                Dummy = type('Dummy', (object,), {'new_conversable_agents': []})
+                cmbagent.groupchat = Dummy()
 
-        # Now call display_cost without triggering the AttributeError
-        cmbagent.display_cost(name_append=f"step_{step}")
+            # Now call display_cost without triggering the AttributeError
+            cmbagent.display_cost(name_append=f"step_{step}")
 
-        # Sync cost file to frontend if using remote execution
-        if custom_executor is not None and 'cost_report_path' in cmbagent.final_context:
-            cost_path = cmbagent.final_context['cost_report_path']
-            if os.path.exists(cost_path):
-                with open(cost_path, 'r') as f:
-                    cost_content = f.read()
-                # Use control_dir as base since executor.work_dir is control_dir
-                rel_cost_path = os.path.relpath(cost_path, control_dir)
-                custom_executor.send_file(rel_cost_path, cost_content)
+            # Sync cost file to frontend if using remote execution
+            if custom_executor is not None and 'cost_report_path' in cmbagent.final_context:
+                cost_path = cmbagent.final_context['cost_report_path']
+                if os.path.exists(cost_path):
+                    with open(cost_path, 'r') as f:
+                        cost_content = f.read()
+                    # Use control_dir as base since executor.work_dir is control_dir
+                    rel_cost_path = os.path.relpath(cost_path, control_dir)
+                    custom_executor.send_file(rel_cost_path, cost_content)
 
-        ## save the chat history and the final context
-        chat_full_path = os.path.join(current_context['work_dir'], "chats")
-        chat_output_path = os.path.join(chat_full_path, f"chat_history_step_{step}.json")
-        write_file_with_sync(
-            chat_output_path,
-            json.dumps(results['chat_history'], indent=2),
-            str(control_dir),  # Use control_dir since executor.work_dir is control_dir
-            custom_executor
-        )
+            ## save the chat history and the final context
+            chat_full_path = os.path.join(current_context['work_dir'], "chats")
+            chat_output_path = os.path.join(chat_full_path, f"chat_history_step_{step}.json")
+            write_file_with_sync(
+                chat_output_path,
+                json.dumps(results['chat_history'], indent=2),
+                str(control_dir),  # Use control_dir since executor.work_dir is control_dir
+                custom_executor
+            )
 
-        context_path = os.path.join(context_dir, f"context_step_{step}.pkl")
-        with open(context_path, 'wb') as f:
-            pickle.dump(cmbagent.final_context, f)
+            context_path = os.path.join(context_dir, f"context_step_{step}.pkl")
+            with open(context_path, 'wb') as f:
+                pickle.dump(cmbagent.final_context, f)
+        except Exception as _debug_save_exc:
+            import traceback
+            print(f"\n[STEP-SAVE-DEBUG] step {step} tail block (summaries/timing/chat_history/context pickle) raised: {_debug_save_exc!r}")
+            traceback.print_exc()
+            print("[STEP-SAVE-DEBUG] continuing to next step despite the above (matches pre-patch behavior of not crashing the run)\n")
 
     ## delete empty folders after execution
     database_full_path = os.path.join(current_context['work_dir'], current_context['database_path'])
