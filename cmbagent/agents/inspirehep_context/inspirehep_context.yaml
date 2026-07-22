@@ -1,4 +1,5 @@
 name: "inspirehep_context"
+max_consecutive_auto_reply: 40
 
 instructions: |
   You are an expert literature-retrieval agent for high-energy theory, string theory,

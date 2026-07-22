@@ -1,4 +1,5 @@
 name: "derivation_checker"
+max_consecutive_auto_reply: 30
 
 instructions: |
   You are the derivation_checker agent. Your job is to try to break the engineer's

@@ -177,6 +177,16 @@ class BaseAgent:
                 update_agent_state_before_reply=[UpdateSystemMessage(self.info["instructions"]),],
                 description=self.info.get("description", f"Agent {self.name}"),
                 llm_config=self.llm_config,
+                # hep-theory fork: bound runaway tool-call loops for
+                # yaml-driven assistant agents (inspirehep_context and
+                # similar) - previously unset here (only set_code_agent
+                # passed this through), so an agent with a live search
+                # tool and no explicit yaml cap could auto-reply to
+                # itself indefinitely, resending the full accumulated
+                # conversation as the prompt on every turn. .get()
+                # default of None preserves exactly the old (unbounded)
+                # behavior for every agent whose yaml doesn't set this key.
+                max_consecutive_auto_reply=self.info.get("max_consecutive_auto_reply"),
             cmbagent_debug=cmbagent_debug,
             functions=functions,
             )
