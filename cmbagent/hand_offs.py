@@ -10,6 +10,60 @@ from autogen.agentchat.contrib.capabilities.transforms import MessageHistoryLimi
 cmbagent_debug = autogen.cmbagent_utils.cmbagent_debug
 
 
+class ToolSafeMessageHistoryLimiter:
+    """Like MessageHistoryLimiter, but never leaves an orphaned tool-result
+    message (role == "tool") at the front of the truncated window.
+
+    hep-theory fork: the plain MessageHistoryLimiter cuts strictly by count,
+    which can land the window boundary between an assistant message's
+    tool_calls and the corresponding tool-result message. Anthropic's API
+    rejects a "tool" role message that isn't immediately preceded by the
+    assistant message that issued the matching tool_call - so a naive
+    count-based cut intermittently breaks tool-heavy agents (engineer,
+    inspirehep_context, cadabra_context, derivation_checker) after this
+    limiter was added to bound the group chat's shared-history resend cost.
+    This variant keeps trimming forward, one message at a time, until the
+    window's first (non-kept) message is not an orphaned tool result.
+    """
+
+    def __init__(self, max_messages=None, keep_first_message=False):
+        if max_messages is not None and max_messages < 1:
+            raise ValueError("max_messages must be None or greater than 1")
+        self._max_messages = max_messages
+        self._keep_first_message = keep_first_message
+
+    def apply_transform(self, messages):
+        if self._max_messages is None or len(messages) <= self._max_messages:
+            return messages
+
+        kept_first = [messages[0]] if self._keep_first_message else []
+        budget = self._max_messages - len(kept_first)
+
+        if budget <= 0:
+            return kept_first
+
+        tail = messages[-budget:]
+
+        # Drop leading orphaned tool-result messages: a "tool" role message
+        # is only valid if the assistant message carrying its matching
+        # tool_calls is still present earlier in the window.
+        while tail and tail[0].get("role") == "tool":
+            tail = tail[1:]
+
+        return kept_first + tail
+
+    def get_logs(self, pre_transform_messages, post_transform_messages):
+        pre_len = len(pre_transform_messages)
+        post_len = len(post_transform_messages)
+        if post_len < pre_len:
+            return (
+                f"Removed {pre_len - post_len} messages. "
+                f"Number of messages reduced from {pre_len} to {post_len}.",
+                True,
+            )
+        return "No messages were removed.", False
+
+
 def register_all_hand_offs(cmbagent_instance):
     """Register all agent handoffs in a data-driven, Pythonic way."""
 
@@ -178,6 +232,33 @@ def register_all_hand_offs(cmbagent_instance):
         transforms=[MessageHistoryLimiter(max_messages=1)],
     )
     terminator_context.add_to_agent(agents['terminator'].agent)
+
+
+    # hep-theory fork: bound the shared group-chat resend cost for the
+    # heavy LLM worker agents. AG2's GroupChat broadcasts every message to
+    # every agent, so an agent invoked later in a plan step (including via
+    # the controller's dynamic mid-step routing) inherits and re-pays for
+    # the ENTIRE accumulated shared history on every one of its own turns -
+    # on top of whatever the max_consecutive_auto_reply turn cap already
+    # bounds for that agent's own reply count. This is upstream AG2 group-
+    # chat behavior (broadcast-to-all with no default windowing), not
+    # fork-specific. controller/formatters/recorders were already covered
+    # above; this extends the same TransformMessages/MessageHistoryLimiter
+    # mechanism to the agents that actually do most of the LLM work and
+    # were previously left unbounded. Uses the tool-safe variant since
+    # these agents make heavy use of tool calls, where a naive count-based
+    # cut can strand an orphaned tool-result message at the window start.
+    heavy_worker_context = TransformMessages(
+        transforms=[ToolSafeMessageHistoryLimiter(max_messages=20, keep_first_message=True)],
+    )
+
+    heavy_worker_agents = [
+        'engineer', 'researcher',
+        'inspirehep_context', 'cadabra_context', 'derivation_checker',
+    ]
+
+    for agent_name in heavy_worker_agents:
+        heavy_worker_context.add_to_agent(agents[agent_name].agent)
 
 
     # ============================================================================
