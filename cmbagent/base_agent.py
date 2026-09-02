@@ -154,6 +154,13 @@ class BaseAgent:
                     llm_config=self.llm_config,
                     cmbagent_debug=cmbagent_debug,
                     functions=functions,
+                    # hep-theory fork: without this, human_input_mode defaults
+                    # to "TERMINATE", which pauses the whole deep_research()
+                    # pipeline for interactive input the moment any heavy
+                    # worker agent hits its max_consecutive_auto_reply cap -
+                    # deep_research() is meant to run fully autonomously, so
+                    # that cap should always just terminate/continue quietly.
+                    human_input_mode="NEVER",
                 )
             else:
                 print(f"[CMBAgent] Creating MassGen engineer agent (hybrid mode)")
@@ -189,6 +196,13 @@ class BaseAgent:
                 max_consecutive_auto_reply=self.info.get("max_consecutive_auto_reply"),
             cmbagent_debug=cmbagent_debug,
             functions=functions,
+            # hep-theory fork: without this, human_input_mode defaults to
+            # "TERMINATE", which pauses the whole deep_research() pipeline
+            # for interactive input the moment any heavy worker agent hits
+            # its max_consecutive_auto_reply cap - deep_research() is meant
+            # to run fully autonomously, so that cap should always just
+            # terminate/continue quietly instead.
+            human_input_mode="NEVER",
             )
         
 
