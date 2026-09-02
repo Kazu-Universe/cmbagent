@@ -97,3 +97,11 @@ tests/legacy/
 
 # PyCharm
 .idea/
+# hep-theory fork: disposable debugging scaffolding
+# One-shot analysis/classification scripts and saved diffs from concluded
+# investigations. The durable records are CHANGELOG_ADDENDUM*.md (reasoning)
+# and patch_*.py (re-appliable dependency patches), both tracked.
+*.diff
+classify_patch_scripts*.py
+check_resend_cost.py
+oneshot_*.py
