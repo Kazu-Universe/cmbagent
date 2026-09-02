@@ -1,7 +1,6 @@
 # PROJECT_STATUS.md — CMBAgentForHEPTH_wClaude
 
-**Last updated:** 2026-08-28 (migration to Claude Team for Scientists account,
-Claude Code introduced as the execution layer)
+**Last updated:** 2026-09-02
 
 > Convention: update this file at the end of every work session — what
 > changed, what's confirmed, what's open, and the exact next command.
@@ -14,8 +13,8 @@ Claude Code introduced as the execution layer)
 
 Kazu — theoretical physics (string theory, KK compactifications, black
 hole thermodynamics) + astrophysical data analysis (Cobaya, CMB
-likelihoods). India, UTC+5:30. New to git — walk through git ops one
-command at a time. Ubuntu machine (Dell Latitude 5420).
+likelihoods). India, UTC+5:30. Still learning git — walk through git ops
+one command at a time. Ubuntu machine (Dell Latitude 5420).
 
 `CMBAgentForHEPTH_wClaude` = fork of open-source **CMBAgent**
 (AG2/AutoGen-based multi-agent research pipeline), extended with three
@@ -34,51 +33,71 @@ Local paths:
 
 ---
 
-## 1. Working style (as of this migration)
+## 1. Working style
 
-- Moved from full copy-paste relay (Claude chat ↔ Kazu's terminal) to
-  **Claude Code in the terminal**, supervised by Kazu, with a Claude
-  chat session available for higher-level planning/review.
-- Permissions: **start conservative**. First Claude Code session should
-  be **read-only** — inspect files and `git log`/`git status`, report
-  back, no edits yet. Loosen gradually as trust builds.
-- Reason for the switch: several past bugs (token-resend, wrong ag2
-  fork base) were only resolved by reading real source directly — the
-  old relay style couldn't do that, and files described-but-not-saved
-  didn't persist across sessions/accounts.
-- Reason to keep it disciplined: Kazu is currently engaging with this
-  project sporadically (busy with other work) and has noticed reduced
-  recall of "what I was doing" between sessions. This file exists to
-  offload that continuity burden from memory onto something durable
-  and versioned. Keep commits small, with messages that explain *why*,
-  not just *what* — preserves the learning value the old relay style had.
+**Default: hands-on relay.** Kazu runs git, python, and pipeline
+commands himself in the terminal and pastes output into a Claude chat
+session for diagnosis and next steps. This is deliberate — running the
+commands personally is how the toolchain gets learned, and that's a
+goal in its own right, not just a means to an end.
+
+**Claude Code is used only where it has a definite advantage:**
+
+1. **Reading real source to diagnose a bug** — where the answer lives in
+   the actual `ag2`/`cmbagent` files. Relaying source by copy-paste is
+   where the token-resend and wrong-fork-base bugs cost the most time.
+2. **Multi-file edits that must stay consistent** — e.g. a change
+   touching `hand_offs.py` and the ag2 side together.
+3. **Offline reproductions with a mocked LLM client** — iterate-test-
+   adjust loops where each round trip through chat is pure overhead.
+
+Everything else — running the research pipeline, git operations,
+reading outputs, deciding what to run next — stays hands-on.
+
+**Claude Code permissions:** `.claude/settings.json` sets
+`defaultMode: "plan"`, so sessions start read-only (reads and read-only
+shell commands; no source edits). The mode toggle is available in the
+Claude Code UI, and `--permission-mode <mode>` sets it at launch.
+This matters: permission modes are enforced by Claude Code itself,
+whereas an instruction in the prompt is only a request to the model —
+in the first trial session, Claude Code ran a command after being told
+not to. **Still to do: adversarial test** — ask it to create a trivial
+file and confirm it actually refuses, before trusting the setting.
+
+Keep commits small, with messages explaining *why*, not just *what*.
+Git note learned 2026-09-02: `git commit -m` treats everything before
+the first *blank* line as the subject, so a multi-line quoted string
+without a blank line becomes one enormous subject. Use one `-m` per
+paragraph instead — git inserts the blank lines.
 
 ---
 
-## 2. Immediate next action — DO THIS FIRST
+## 2. Current state — clean
 
-**Not yet confirmed whether two dictated commits from the last session
-(pre-migration) actually landed.** First thing, read-only:
+As of 2026-09-02 the working tree is clean and `main` is level with
+`origin/main` at `afff173`. Recent history:
 
-```bash
-cd ~/Projects/CMBagentForHEPTH_wClaude/cmbagent
-git log --oneline -5
-git log origin/main..HEAD --oneline
+```
+afff173  Ignore disposable hep-theory debugging scaffolding
+29de9c7  Track hep-theory fork research drivers, docs, and dependency patch scripts
+4595b24  Tune per-agent history window sizes; drop temporary diagnostic
+f250ce0  Force human_input_mode=NEVER for heavy worker agents
+5502d23  Bound shared group-chat history resend for heavy worker agents
 ```
 
-Look for a commit like *"Tune per-agent history window sizes..."*. The
-second command should be empty if already pushed.
+The previously-unconfirmed work is resolved: `5502d23` (bounding) was
+already pushed, but the per-agent window tuning had never made it into
+`cmbagent/hand_offs.py` — the intended version was sitting as an
+untracked copy at the repo root. It is now in place and committed, the
+temporary diagnostic print is removed, and the `human_input_mode` fix
+is committed too.
 
-- **If the commit is there:** the token-resend fix (§3 below) is live.
-  Move to §4 (model routing) then §5 (physics task).
-- **If not:** the fix needs to be (re)applied. Full exact content is in
-  §3 — read the current `cmbagent/hand_offs.py` first, then apply the
-  described change directly (this has already been fully investigated;
-  no need to redo the debugging).
+**Next actual work:** §4 (model routing decision) and §5 (physics task
+iv). Nothing is blocking.
 
 ---
 
-## 3. Token-resend bug — status: fixed & validated (re-verify it's live)
+## 3. Token-resend bug — fixed, live, and committed
 
 **Root cause:** AG2's `GroupChat` broadcasts every message to every
 agent; without a bounding transform, a heavy agent dynamically routed
@@ -87,117 +106,78 @@ history on every turn. `hand_offs.py` had bounding for cheap plumbing
 agents but not for the five heavy LLM workers: `engineer`, `researcher`,
 `inspirehep_context`, `cadabra_context`, `derivation_checker`.
 
-**Fix:** a custom transform, `ToolSafeMessageHistoryLimiter` (like AG2's
+**Fix, now live in `cmbagent/hand_offs.py`:** a custom
+`ToolSafeMessageHistoryLimiter` transform (like AG2's
 `MessageHistoryLimiter` but never leaves an orphaned tool-result message
 at the front of the truncated window, which the Anthropic API would
-reject), registered per-agent in `register_all_hand_offs()` in
-`hand_offs.py`:
-
-```python
-class ToolSafeMessageHistoryLimiter:
-    def __init__(self, max_messages=None, keep_first_message=False):
-        self._max_messages = max_messages
-        self._keep_first_message = keep_first_message
-
-    def apply_transform(self, messages):
-        if self._max_messages is None or len(messages) <= self._max_messages:
-            return messages
-        kept_first = [messages[0]] if self._keep_first_message else []
-        budget = self._max_messages - len(kept_first)
-        if budget <= 0:
-            return kept_first
-        tail = messages[-budget:]
-        while tail and tail[0].get("role") == "tool":
-            tail = tail[1:]
-        return kept_first + tail
-
-    def get_logs(self, pre_transform_messages, post_transform_messages):
-        pre_len = len(pre_transform_messages)
-        post_len = len(post_transform_messages)
-        if post_len < pre_len:
-            return (
-                f"Removed {pre_len - post_len} messages. "
-                f"Number of messages reduced from {pre_len} to {post_len}.",
-                True,
-            )
-        return "No messages were removed.", False
-
-
-heavy_worker_window_sizes = {
-    'engineer': 20,
-    'researcher': 20,
-    'inspirehep_context': 70,   # bumped from 20 — see note below
-    'cadabra_context': 20,
-    'derivation_checker': 20,
-}
-
-for agent_name, max_messages in heavy_worker_window_sizes.items():
-    TransformMessages(
-        transforms=[ToolSafeMessageHistoryLimiter(max_messages=max_messages, keep_first_message=True)],
-    ).add_to_agent(agents[agent_name].agent)
-```
+reject), registered per-agent in `register_all_hand_offs()` via a
+`heavy_worker_window_sizes` dict: `inspirehep_context` at 70, the other
+four at 20.
 
 Validated: `engineer`'s dynamically-routed turn went from the original
-bug's ~3.6M-token bill down to ~16.6K prompt tokens (proportionate) for
-a similarly-shaped hand-off. **This part is solid — don't revisit
-unless a new anomaly appears.**
+bug's ~3.6M-token bill down to ~16.6K prompt tokens for a
+similarly-shaped hand-off. **Don't revisit unless a new anomaly appears.**
 
-**Important nuance — window size is not the real lever:** widening
-`inspirehep_context` from 20→70 left total cost on a 15-topic scan
-essentially unchanged (~3.9M tokens either way), because a genuinely
-long scan needs 55–60+ turns regardless — more window just makes each
-resend bigger, trading against the agent losing track of earlier
-results. **The actual fix is task design:**
-`deep_research()` gives each plan step a fresh group chat, so split
-long multi-topic scans across multiple plan steps (e.g. 5 topics per
-step) instead of one long single-step instruction. Do this in
-`plan_instructions` / task phrasing going forward, for any heavy-agent
-multi-item task.
+**Why 70 for `inspirehep_context`:** a flat 20 correctly bounds message
+count but is too small for its real workload — one multi-search
+literature scan needs 2–3 messages per search round trip, so a
+15-search scan runs 30–45+ messages of its own turns before the
+controller's interleaved instructions. Once earlier results scrolled
+out of the window, the agent lost sight of its own completed work and
+redid finished searches — genuine redundant work, not a resend-bug
+symptom.
 
-Also needs the AG2-side patch (same content class must exist / be
-importable from wherever Kazu's local `ag2` working copy applies it —
-was previously placed via `conversable_agent.py` in the `ag2` fork; if
-missing, recreate using the same `ToolSafeMessageHistoryLimiter` class
-above).
+**Important nuance — window size is not the cost lever:** widening
+20→70 left total cost on a 15-topic scan essentially unchanged (~3.9M
+tokens either way), because a genuinely long scan needs 55–60+ turns
+regardless. The 70 is justified by the redundant-work problem above,
+not by cost. **The actual cost fix is task design:** `deep_research()`
+gives each plan step a fresh group chat, so split long multi-topic
+scans across multiple plan steps (e.g. 5 topics per step) rather than
+one long single-step instruction. Apply this in `plan_instructions` /
+task phrasing for any heavy-agent multi-item task.
 
-**Two unrelated bugs, fixed and stable (no action needed, kept for
-context on any future anomaly):**
+**Still open on the ag2 side:** the same transform class needs to exist
+in the local `ag2` working copy (previously placed via
+`conversable_agent.py`). Not verified this session — check before the
+next full pipeline run.
+
+**Two unrelated bugs, fixed and stable (context for future anomalies):**
 1. Kazu's `ag2` fork had been built from the wrong-vintage branch —
    fixed by rebuilding from the literal bytes of the real
-   `cmbagent_autogen` PyPI wheel. Now `cmbagent-real-base` branch; old
-   branch renamed `cmbagent-v091-DEPRECATED-wrong-base` — don't use it.
+   `cmbagent_autogen` PyPI wheel. Now `cmbagent-real-base`; old branch
+   renamed `cmbagent-v091-DEPRECATED-wrong-base` — don't use it.
 2. `UnboundLocalError` in AG2's `group_tool_executor.py` from an
    empty-but-present `tool_calls: []` — fixed with a defensive guard.
    Separately, `human_input_mode` defaulted to `"TERMINATE"` instead of
    `"NEVER"` for the five heavy agents in `base_agent.py`'s
-   `set_assistant_agent`, causing unexpected interactive pauses — fixed.
+   `set_assistant_agent`, pausing the pipeline for interactive input
+   whenever an agent hit its `max_consecutive_auto_reply` cap — fixed
+   and committed in `f250ce0`.
 
 ---
 
-## 4. Model routing — open decision, needs Kazu's go-ahead to execute
+## 4. Model routing — open decision, needs Kazu's go-ahead
 
 `cmbagent/utils/utils.py`'s `default_agents_llm_model` dict currently
 has `researcher`/`plan_reviewer`/`idea_maker`/`idea_hater` on
 `claude-sonnet-5`/`claude-haiku-4-5-20251001` (a stale comment
 referenced Fable 5 for these, but that was never actually live).
 
-Kazu had previously agreed, in principle, to switch these four roles to
-`claude-opus-5` (released ~2026-07-24, cheaper than Fable 5 at close
-performance per Anthropic, though Fable 5 is still recommended for
-longer-horizon autonomous work). **Do not apply this without
-re-confirming with Kazu first** — pricing/performance tradeoffs may
-have shifted since the original agreement, and this file doesn't
-constitute that confirmation on its own.
+Kazu had previously agreed in principle to switch these four roles to
+`claude-opus-5`. **Do not apply without re-confirming** — pricing and
+model availability have moved since (note also that Fable 5 / Mythos 5
+access was suspended and restored mid-2026 under US export controls),
+and this file doesn't constitute that confirmation.
 
 ---
 
-## 5. Physics — task (iv), the next thing to actually run
+## 5. Physics — task (iv), the next thing to run
 
 Established results so far (KK-tower log coefficients on
 Schwarzschild×S¹ and 5D black-string setups; BGMS `-1/4 log N` result
 validated against Arrighi & Casarin's Hurwitz-zeta method,
-arXiv:2606.01167) are in the full handover doc / git history — not
-repeated here to keep this file short. Ask if a refresher is needed.
+arXiv:2606.01167) are in the changelogs and git history.
 
 **Task (iv), drafted, not yet run:**
 
@@ -209,15 +189,22 @@ repeated here to keep this file short. Ask if a refresher is needed.
 > species-scale/tower divergence reappear as an obstruction anywhere in
 > that assembly?
 
-- Driver script name previously used:
-  `research_crossed_product_kk_formulation.py` (needs to be redrafted —
-  didn't persist; content above is sufficient to redraft it)
-- Intended `work_dir`: `output/2026-08-28_crossed_product_kk_formulation`
-  (date bumped to migration date; adjust to actual run date)
-- **Structure as multiple plan steps** per §3's lesson: e.g. one step
-  for the literature scan, one for the formulation write-up, one for
+- **Correction (2026-09-02):** the driver
+  `research_crossed_product_kk_formulation.py` **does exist** and is now
+  tracked in git — an earlier version of this file wrongly said it had
+  to be redrafted. Read it before assuming anything about its contents;
+  it has not been reviewed since being written.
+- Five sibling drivers are also tracked:
+  `research_5d_black_string_log_coefficient.py`,
+  `research_ads_kk_tower_localization_match.py`,
+  `research_kk_tower_entanglement_entropy.py`,
+  `research_kk_tower_susskind_uglum_check.py`,
+  `research_species_scale_moduli_dependence.py`.
+- Intended `work_dir`: `output/<run-date>_crossed_product_kk_formulation`
+- **Structure as multiple plan steps** per §3's lesson: one step for the
+  literature scan, one for the formulation write-up, one for
   `derivation_checker` adversarial review — not one long single-step
-  instruction, especially for the literature-scan portion.
+  instruction.
 
 ---
 
@@ -232,20 +219,46 @@ repeated here to keep this file short. Ask if a refresher is needed.
   disk even for successful steps. Debug tracing in place, root cause
   not confirmed.
 - `restart_at_step`: `engineer_instructions`/`max_n_attempts` only wire
-  in during initial planning, silently ignored on resume — new
-  guidance for a resumed step must be smuggled in via the task text.
+  in during initial planning, silently ignored on resume — new guidance
+  for a resumed step must be smuggled in via the task text.
 
 ---
 
-## 7. Session log
+## 7. Repo housekeeping
 
-Append one entry per session here going forward — a few lines is
-enough: date, what was done, what's confirmed, what's next.
+`CHANGELOG_ADDENDUM.md` through `_4.md` (430 lines total) are now
+tracked. They record **upstream** fixes to `cmbagent_autogen`/`autogen`
+and the reasoning behind them — the Anthropic-vs-OpenAI `tool_choice`
+schema mismatch, `top_p` rejection, the `group_tool_executor` bug, etc.
+This is expensive-to-rediscover knowledge. **Open task:** consolidate
+the four into one `CHANGELOG_HEP_THEORY.md`, deliberately, as its own
+piece of work — not a quick tidy-up.
+
+`patch_*.py` are tracked because they patch the *dependency* inside
+`.venv`, not this repo, so they'd need re-applying after any venv
+rebuild or machine move. Note the changelog references a
+`patch_default_top_p.py` that isn't present — the set is incomplete;
+the changelogs are the authoritative record.
+
+Disposable scaffolding (`*.diff`, `classify_patch_scripts*.py`,
+`check_resend_cost.py`, `oneshot_*.py`) is gitignored.
+
+---
+
+## 8. Session log
 
 - **2026-08-28** — Migrated to Claude Team for Scientists account.
-  Introduced Claude Code (terminal) as the execution layer, supervised
-  by a Claude chat session. Agreed to start read-only. This status file
-  created from the prior handover doc. **Next: run the §2 git-log
-  check, read-only, report back before any edits.**
-  
-  2026-08-28 (cont.) — Configured Claude Code to defaultMode: "plan" in .claude/settings.json after it ran an unrequested command during read-only testing. Located the mode toggle. Next: adversarial test (ask it to write a trivial file, confirm real refusal) before proceeding to §2's actual verification work.
+  Trialled Claude Code; it ran a command during a read-only session
+  after being told not to. Configured `defaultMode: "plan"` in
+  `.claude/settings.json` in response. This status file created.
+- **2026-09-02** — Settled working style: hands-on relay by default,
+  Claude Code only for the three cases in §1. Resolved §2's open
+  questions by inspecting the actual diffs: the per-agent window tuning
+  had never landed in `cmbagent/hand_offs.py` (it was an untracked copy
+  at the repo root), and the `human_input_mode` fix was uncommitted.
+  Five commits, all pushed: both fixes, the diagnostic print removed,
+  18 previously-untracked files now tracked (research drivers, docs,
+  changelogs, patch scripts), and a `.gitignore` for scaffolding.
+  Working tree now clean for the first time since the migration.
+  **Next: (a) the Claude Code adversarial permission test from §1,
+  (b) verify the ag2-side transform per §3, (c) then §4 or §5.**
