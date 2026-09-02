@@ -248,17 +248,32 @@ def register_all_hand_offs(cmbagent_instance):
     # were previously left unbounded. Uses the tool-safe variant since
     # these agents make heavy use of tool calls, where a naive count-based
     # cut can strand an orphaned tool-result message at the window start.
-    heavy_worker_context = TransformMessages(
-        transforms=[ToolSafeMessageHistoryLimiter(max_messages=20, keep_first_message=True)],
-    )
+    #
+    # Window sizes are per-agent, not a single shared value: a flat 20 was
+    # confirmed (2026-07-27, diagnostic instrumentation) to correctly bound
+    # message count and system-message size, but was too small for
+    # inspirehep_context's real workload - a single multi-search literature
+    # scan (e.g. 15 sequential searches within one plan step) needs ~2-3
+    # messages per search round trip, i.e. 30-45+ messages just for its own
+    # turns, before counting the controller's interleaved instructions.
+    # Once older search results scrolled out of a 20-message window, the
+    # agent lost visibility into its own completed work and started
+    # redoing already-finished searches from scratch - genuine, costly
+    # redundant work, not a resend-bug symptom. 20 was never stress-tested
+    # against a workload this long: earlier validation runs only ever did
+    # ~5 searches, comfortably under 20.
+    heavy_worker_window_sizes = {
+        'engineer': 20,
+        'researcher': 20,
+        'inspirehep_context': 70,
+        'cadabra_context': 20,
+        'derivation_checker': 20,
+    }
 
-    heavy_worker_agents = [
-        'engineer', 'researcher',
-        'inspirehep_context', 'cadabra_context', 'derivation_checker',
-    ]
-
-    for agent_name in heavy_worker_agents:
-        heavy_worker_context.add_to_agent(agents[agent_name].agent)
+    for agent_name, max_messages in heavy_worker_window_sizes.items():
+        TransformMessages(
+            transforms=[ToolSafeMessageHistoryLimiter(max_messages=max_messages, keep_first_message=True)],
+        ).add_to_agent(agents[agent_name].agent)
 
 
     # ============================================================================
