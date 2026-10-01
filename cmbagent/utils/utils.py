@@ -131,22 +131,26 @@ default_formatter_model = 'claude-haiku-4-5-20251001'
 # hep-theory fork: all-Anthropic defaults (was hardcoded to OpenAI models).
 # Fable 5 for planning/idea-generation roles (exploratory, long-context synthesis);
 # Sonnet for execution/critique roles; Haiku for mechanical formatting.
-# hep-theory fork: TEMP cheap-model debug swap - fable-5 -> haiku for now,
-# swap back once the pipeline is confirmed working end-to-end.
+# hep-theory fork: 2026-09 model routing (see update_model_routing_2026_09.py).
+# Heavy agents are not known to use forced tool_choice (CHANGELOG_ADDENDUM names
+# terminator / plan_recorder / review_recorder); confirm with a short dry run.
+# Anything that uses forced tool_choice or response_format must stay on
+# claude-sonnet-5 / claude-haiku-4-5 until AG2's forced tool_choice is replaced
+# by auto + strict tool use (Opus 5.5 / Fable 5.1 / Sonnet 5.5 reject forcing).
 default_agents_llm_model = {
-    "engineer": "claude-sonnet-5",
+    "engineer": "claude-sonnet-5-5",
     "aas_keyword_finder": "claude-haiku-4-5-20251001",
-    "researcher": "claude-sonnet-5",
-    "planner": "claude-haiku-4-5-20251001",
-    "plan_reviewer": "claude-sonnet-5",
-    "idea_hater": "claude-haiku-4-5-20251001",
-    "idea_maker": "claude-haiku-4-5-20251001",
-    "camb_context": "claude-sonnet-5",
+    "researcher": "claude-opus-5-5",
+    "planner": "claude-fable-5-1",
+    "plan_reviewer": "claude-opus-5-5",
+    "idea_hater": "claude-opus-5-5",
+    "idea_maker": "claude-opus-5-5",
+    "camb_context": "claude-sonnet-5-5",
     "summarizer": "claude-haiku-4-5-20251001",
     "summarizer_response_formatter": "claude-haiku-4-5-20251001",
-    "inspirehep_context": "claude-sonnet-5",
-    "cadabra_context": "claude-sonnet-5",
-    "derivation_checker": "claude-sonnet-5",
+    "inspirehep_context": "claude-sonnet-5-5",
+    "cadabra_context": "claude-sonnet-5-5",
+    "derivation_checker": "claude-opus-5-5",
 }
 
 default_agent_llm_configs = {}
@@ -175,6 +179,17 @@ def get_api_keys_from_env():
     }
     return api_keys
 
+
+# hep-theory fork 2026-09: AG2's ANTHROPIC_PRICING_1k predates Claude 4, so
+# cost tracking silently reported $0 for every Claude 5 model. Passing `price`
+# in the config entry overrides it.
+claude_price_per_1k = {
+    "claude-fable-5-1": (0.010, 0.050),
+    "claude-opus-5-5": (0.004, 0.020),
+    "claude-sonnet-5-5": (0.002, 0.010),
+    "claude-sonnet-5": (0.002, 0.010),
+    "claude-haiku-4-5-20251001": (0.001, 0.005),
+}
 
 def get_model_config(model, api_keys):
     # Allow passing a full config dict (e.g. for local LLM with base_url)
@@ -226,8 +241,13 @@ def get_model_config(model, api_keys):
         config.update({
             "api_key": api_keys["ANTHROPIC"],
             "api_type": "anthropic",
-            "max_tokens": 16000,
+            # hep-theory fork 2026-09: thinking is always on for Opus 5.5 /
+            # Fable 5.1 and draws on the same budget as the reply.
+            "max_tokens": 32000,
         })
+        # USD per 1K tokens (input, output), platform.claude.com, 2026-09-30.
+        if model in claude_price_per_1k:
+            config["price"] = list(claude_price_per_1k[model])
     else:
         config.update({
             "api_key": api_keys["OPENAI"],
