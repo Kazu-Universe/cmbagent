@@ -105,3 +105,4 @@ tests/legacy/
 classify_patch_scripts*.py
 check_resend_cost.py
 oneshot_*.py
+!tests/**/test_*.py
