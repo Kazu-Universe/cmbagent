@@ -86,3 +86,68 @@ project_dir/
 - `cmbagent.one_shot(task, agent='engineer', model='gpt-4o', work_dir=...)` - Main execution API
 - Planning and control via specialized agent orchestration
 - WebSocket streaming for real-time UI updates
+
+## hep-theory fork: rules for every change
+
+This fork adds three agents (`inspirehep_context`, `cadabra_context`,
+`derivation_checker`), Anthropic-only model routing, and patches to the
+`ag2` fork (branch `cmbagent-real-base`) applied inside `.venv` by the
+`patch_*.py` scripts. The authoritative history of every fix is in
+`CHANGELOG_ADDENDUM*.md`; current state is in `PROJECT_STATUS.md`.
+
+### Working rules
+- Sessions start in plan mode (read-only). Do not edit files until asked.
+  The PI runs git, pip and pipeline commands himself.
+- Every bug fix ships with an offline regression test in
+  `tests/regression/` (pytest, no network, LLM client mocked).
+- Show the test bites: it must fail with the fix reverted and pass with it.
+- Never delete, skip or weaken a test to make it pass.
+- Before proposing a commit, run `/code-review` on the diff. Report a
+  finding only with a failing test or a concrete reproduction.
+- Dependency patches: make the script idempotent (marker string), abort
+  without writing if the target text is not found, and record the fix in
+  the changelog.
+
+### Known bug classes: check new code against each
+1. **Provider schemas differ.** Anthropic forced tool choice is
+   `{"type": "tool", "name": X}`, not OpenAI's `{"type": "function", ...}`.
+   Opus 5.5, Fable 5.1 and Sonnet 5.5 reject forced tool choice entirely:
+   agents that force tool calls (recorders, terminator, controller,
+   formatters) must stay on `claude-sonnet-5` / `claude-haiku-4-5`.
+2. **Sampling parameters.** Claude 5-generation models reject non-default
+   `temperature` / `top_p`. Never send them.
+3. **Key presence is not truthiness.** Replies can carry `tool_calls: []`.
+   Use `msg.get("tool_calls")`, never `"tool_calls" in msg`.
+4. **Empty histories.** Forced termination hand-offs reach agents with no
+   history. Guard every `messages[-1]` and `processed[-1]`.
+5. **Reply-order shadowing.** `OnContextCondition` runs before custom reply
+   functions on the same agent. Host context routing on a separate
+   pass-through agent (the `plan_router` pattern).
+6. **Per-step state.** Each plan step loads its own `sub_task`, agent and
+   instructions from `final_plan.json`; nothing is inherited from the
+   previous step's context.
+7. **Agent-name allowlists.** A new agent must be added to every
+   `Literal[...]`: `planner_response_formatter.sub_task_agent`,
+   `status.py` (`agent_for_sub_task` and four `agent_transfer_map`
+   copies), `planning.py` (`needed_agents`). Unknown names must warn,
+   never `sys.exit`.
+8. **Template placeholders.** System messages are `format`ted with the
+   context; missing keys now render as empty strings. Do not add
+   placeholders that nothing populates.
+9. **Naming conventions are hidden contracts.** Step-summary extraction
+   used to assume a `<name>_response_formatter` companion. Agents without
+   one must be found by their unstripped name.
+10. **History resend.** Heavy workers use `ToolSafeMessageHistoryLimiter`
+    (window 20; `inspirehep_context` 70). Truncation must never leave a
+    tool result at the start of the window.
+11. **Output budget.** Claude configs use `max_tokens` 32000 because
+    thinking shares the output budget. Treat truncation warnings as bugs.
+12. **Thinking blocks first.** Never read `response.content[0].text`;
+    select content blocks by type.
+13. **Config sanitizers.** `clean_llm_config` strips `base_url` unless the
+    model is registered in `local_llm_urls` (needed for OpenRouter).
+14. **Interactive pauses.** Worker agents need `human_input_mode="NEVER"`.
+15. **Simulated actions.** An agent saying it saved a file proves nothing;
+    check the file exists (`researcher_executor` save is unconfirmed).
+16. **YAML block scalars.** Inserted marker comments must keep the
+    block's indentation.
