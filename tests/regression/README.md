@@ -20,7 +20,7 @@ a configuration rule to enforce; **open** = a known risk not yet fixed (mark
 | R2 | Sampling params (2) | ag2 `oai/anthropic.py`, `utils.py` | Request params built for each routed Claude 5 model carry no non-default `temperature` or `top_p` | invariant (document current behaviour first) |
 | R3 | Key presence (3) | ag2 `group_tool_executor.py` | A reply with `tool_calls: []` returns "no tool call" instead of raising `UnboundLocalError` | fixed |
 | R4 | Empty histories (4) | ag2 `conversable_agent.py` (five sites), `oai/anthropic.py` | Each guarded reply function with `messages=[]` returns `(False, None)`; `oai_messages_to_anthropic_messages([])` does not raise | fixed |
-| R5 | History resend (10) | `hand_offs.py` | `ToolSafeMessageHistoryLimiter` on synthetic histories: window respected; first kept message is never a tool result; tool-use/tool-result pairs never split. The five heavy agents are registered with windows 20 / 70 | fixed |
+| R5 | History resend (10) | `hand_offs.py` | `ToolSafeMessageHistoryLimiter` on synthetic histories: window respected; first kept message is never a tool result; tool-use/tool-result pairs never split. The five heavy agents are registered with windows 20 / 70 | fixed except the burst case (open, `xfail`) |
 | R6 | Model routing (1, 11) | `utils.py` | Every agent that forces tool calls maps to a model accepting forced tool choice; Claude configs have `max_tokens` ≥ 32000 and a price entry | invariant |
 | R7 | Thinking blocks (12) | ag2 `oai/anthropic.py` `_extract_json` | A mocked response whose first block is `thinking` still yields the JSON text | open (`xfail`) |
 
@@ -54,11 +54,87 @@ a configuration rule to enforce; **open** = a known risk not yet fixed (mark
    since it also protects every future agent addition.
 3. **Bite check, per test.** Revert the fix (for venv patches, run the test
    against an unpatched copy of the file), confirm failure, restore, confirm
-   pass. Record "bites: yes" in the commit message.
-4. **Run** `pytest tests/regression -q` after every change and after every
-   `.venv` rebuild.
+   pass. Record "bites: yes" in the commit message. Tier 1 automates this -
+   see "Tier 1: implemented" below - rather than hand-reverting files.
+4. **Run** `pytest tests/regression -q` - always scoped to this directory,
+   never a bare `pytest`. See the warning below.
 5. **Later.** A GitHub Actions workflow running the suite on each push
    (free for a public repository), and `/code-review` on each PR.
+
+## Always invoke scoped: `pytest tests/regression -q`
+
+`pyproject.toml` sets `testpaths = ["tests"]`, so a bare `pytest` (or
+anything that doesn't scope to this directory) collects every file under
+`tests/`, including `test_deep_research.py`, `test_one_shot_engineer.py` and
+their siblings - pytest-shaped functions that make **real, paid API calls**.
+Several of them read API keys / cloud credentials (`ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, `AWS_REGION`, ...) at **collection time**, not just when
+actually run, so a bare `pytest --collect-only` with no credentials set
+already errors out on five of them (confirmed: `PermissionError`,
+`ValueError: API key or AWS credentials...`, `openai.OpenAIError`) before a
+single real test body executes. That's a safe failure mode with no keys
+present, but with keys present a bare `pytest` can reach real test *bodies*
+that place real API calls. Always run `pytest tests/regression -q`
+explicitly.
+
+## Tier 1: implemented (`tests/regression/`)
+
+R1, R3, R4, R5, plus the `ToolSafeMessageHistoryLimiter` burst case, are
+implemented across `conftest.py`, `_checks.py`, `_baseline.py`,
+`test_r1_anthropic_tool_choice.py`, `test_r3_empty_tool_calls.py`,
+`test_r4_empty_histories.py`, and `test_r5_history_window.py`. Two things
+found during implementation did not get silently swept into "fixed":
+
+- **R3's sibling site is still open.** The same function
+  (`_generate_group_tool_reply`) that R3 guards against an empty-but-present
+  `tool_calls` list has a second, unguarded site: `messages=[]` still raises
+  `IndexError` (same bug class as R4, but no patch script covers this one).
+  Shipped as `test_empty_history_sibling_site_is_still_unguarded`, an
+  `xfail(strict=True, raises=IndexError)` - it will flip to a loud failure
+  the day this gets fixed, forcing the test to be updated rather than
+  quietly starting to pass.
+- **R4's fifth guarded site doesn't bite.** `check_termination_and_human_reply`
+  has the fork's guard *and* a pre-existing upstream guard a few lines below
+  it; reverting just the fork's copy still returns `(False, None)` because
+  upstream's own guard catches it. The behavioural test still exists (it's
+  real behaviour worth pinning), but the actual regression protection for
+  that one site is a source-marker count
+  (`test_five_fork_guards_and_six_total_present`), not a bite check.
+- **R5's burst case is still open.** A run of tool messages longer than the
+  window (e.g. one assistant turn issuing many tool calls at once) isn't
+  handled by the agreed fix: `ToolSafeMessageHistoryLimiter` only trims
+  forward, so it returns a first-message-only (or, without
+  `keep_first_message`, empty) history instead of extending the window
+  backwards - see `docs/prompt_caching_plan.md` Phase 3 ("cache-friendly
+  history window"), which is expected to fix this. Shipped as
+  `test_burst_should_extend_window_backwards`, an
+  `xfail(strict=True, raises=AssertionError)` - it will flip to a loud
+  failure once Phase 3 lands, forcing the test (and the characterization
+  tests next to it) to be updated together, not silently start passing.
+
+### `bite_check.py`
+
+Not collected by pytest (no `test_` prefix). Run it directly:
+
+```bash
+python tests/regression/bite_check.py
+```
+
+It loads pre-fix module/source snapshots straight from git history
+(`_baseline.py`: ag2 commit `385340d4` for R1/R3/R4, this repo's own commit
+`5502d23^` for R5's registration check) and re-runs the *exact same*
+assertions the live tests use against them, confirming each guarded fix
+actually fails without it - rather than a hand-reverted file and a manual
+pytest run. Paste its output into the commit message as the "bites: yes"
+evidence.
+
+Exit codes:
+
+| Code | Meaning |
+|---|---|
+| `0` | Every row matched its expected outcome, nothing skipped. Evidence is complete - safe to cite as "bites: yes". |
+| `1` | At least one row's outcome didn't match what it was declared to expect - either a fix stopped biting, an expected non-bite started biting, or a check raised an exception type it didn't declare (reported as `ERROR (unexpected exception type)`, which usually means a bug in the check itself, not in the code under test). |
+| `2` | No failures, but at least one row was `SKIP`ped - usually because the sibling `ag2` checkout (`$AG2_FORK_DIR`, default `../ag2`) isn't present. Evidence is **incomplete**, not confirmed; do not cite it as "bites: yes" until it's re-run clean. |
 
 ## Separate from this suite: evaluations
 
