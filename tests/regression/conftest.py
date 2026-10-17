@@ -12,6 +12,7 @@ from __future__ import annotations
 import autogen.agentchat.conversable_agent as conversable_agent
 import autogen.agentchat.group.group_tool_executor as group_tool_executor
 import autogen.oai.anthropic as anthropic
+import autogen.oai.client as oai_client
 import cmbagent.hand_offs as hand_offs
 import pytest
 
@@ -19,6 +20,11 @@ import pytest
 @pytest.fixture
 def live_anthropic_module():
     return anthropic
+
+
+@pytest.fixture
+def live_client_module():
+    return oai_client
 
 
 @pytest.fixture

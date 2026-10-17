@@ -65,6 +65,40 @@ output tokens, and a hash of the system block. Run one cheap known task. This
 tells us how often system prompts change within a step (obstacle 2) and how
 long the gaps between an agent's calls are (obstacle 3).
 
+*Status (14 October 2026): implemented* (ag2 fork commit `552f5cb9`; entry in
+`CHANGELOG_ADDENDUM_4.md`; test row C0). Usage:
+
+```bash
+# Absolute path; unset (or empty) means logging is off.
+export CMBAGENT_CALL_LOG=/absolute/path/to/susskind_uglum_calls.jsonl
+python research_kk_tower_susskind_uglum_check.py
+python dev_scripts/summarize_call_log.py "$CMBAGENT_CALL_LOG" [--gap 300]
+```
+
+- One JSON line per Anthropic call: `ts`, `pid`, `agent`, `step`, `model`,
+  `input_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`,
+  `output_tokens`, sha256 prefixes of the system block, tools, first message
+  and `thinking` / `tool_choice` options. Nothing is cached yet, so the cache
+  fields should be 0.
+- **Always use an absolute path** (a relative one is resolved at write time and
+  would split the log on a `chdir`), and **use one run per process or one log
+  file per run**: `pid` is the only run discriminator and step numbers restart
+  at 1 in a new `one_shot`; runs that share a pid (every container run is
+  pid 1) are read as one run. Logging assumes calls go through
+  `OpenAIWrapper` and are made one at a time per client.
+- **Reading the summary.** Phase 4 counts system-prompt changes only between
+  consecutive calls of one agent with the same `pid` and the same `step`; where
+  the step is unknown it counts only flip-flops (a return to an earlier hash),
+  which also flags a legitimate A, B, A reuse of an agent across steps.
+  Check the "records have step None" line first: a high share means the step
+  field is not working and the Phase 4 verdict rests on the fallback. Phase 5
+  counts gaps only between calls with the same system block (a cache hit was
+  possible); gaps are accurate to about one call's latency. Phase 3 counts
+  first-message changes only within a step. The verdict lines print their
+  thresholds; they prompt a decision and do not make it.
+- After a `.venv` rebuild, re-run `python patch_call_usage_log.py`
+  (`test_patch_markers_present` fails if the patch was dropped).
+
 **Phase 1: automatic caching.** In the ag2 Anthropic client, add top-level
 `cache_control={"type": "ephemeral"}` to every Claude request, behind a
 config switch (`prompt_caching: true` by default for Claude models, off for
