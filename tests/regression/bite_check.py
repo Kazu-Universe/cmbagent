@@ -225,6 +225,335 @@ add("R5 controller negative control (sanity, not a bite)", "no_bite", _check_r5_
 
 
 # ---------------------------------------------------------------------------
+# C0: per-call usage log (docs/prompt_caching_plan.md Phase 0).
+#
+# Baseline = ag2 `cmbagent-real-base` at dc191dd5, before the call-log change.
+# The no-behaviour-change invariants (off is inert, same request, same
+# response) hold trivially on a baseline with no logger, so those rows are
+# "no_bite"; they are shown to bite by MUTANTS - the patched sources with one
+# deliberate defect each (a logger that mutates the request, one that raises,
+# a writer memoised by @lru_cache, a switch that is always on...).
+# ---------------------------------------------------------------------------
+
+import tempfile  # noqa: E402
+
+_HOOK = 'self._cmbagent_last_call = _cmbagent_call_record(anthropic_params, response)'
+_GUARD = 'if os.environ.get("CMBAGENT_CALL_LOG"):\n            ' + _HOOK
+_WRITER_EXCEPT = '    except Exception as e:\n        warnings.warn(f"CMBAGENT_CALL_LOG write failed'
+_WRITER_DEF = "def _cmbagent_write_call_log("
+_LRU_AND_DEF = "@lru_cache(maxsize=128)\ndef log_cache_seed_value("
+_TOKENS_RETURN = "return v if isinstance(v, int) and not isinstance(v, bool) else None"
+
+
+def _c0_base():
+    return _cached("c0_base", _baseline.load_c0_base_modules)  # (anthropic, client)
+
+
+def _c0_patched_sources():
+    return _cached("c0_patched_sources", _baseline.c0_patched_sources)
+
+
+def _replace_once(source: str, old: str, new: str) -> str:
+    # ValueError (not an expected bite type) so a stale mutation anchor shows
+    # up as ERROR instead of being misread as a bite.
+    if source.count(old) != 1:
+        raise ValueError(f"mutation anchor found {source.count(old)} times, expected 1: {old[:60]!r}")
+    return source.replace(old, new)
+
+
+def _c0_mutant(tag: str, anthropic_edits=(), client_edits=()):
+    """(anthropic, client) modules built from the patched sources with the
+    given (old, new) edits applied."""
+    a_src, c_src = _c0_patched_sources()
+    for old, new in anthropic_edits:
+        a_src = _replace_once(a_src, old, new)
+    for old, new in client_edits:
+        c_src = _replace_once(c_src, old, new)
+    return (
+        _baseline.load_module_from_source(a_src, f"autogen.oai._mutant_{tag}_anthropic", f"mutant_{tag}_anthropic.py"),
+        _baseline.load_module_from_source(c_src, f"autogen.oai._mutant_{tag}_client", f"mutant_{tag}_client.py"),
+    )
+
+
+def _with_tmp_log(func):
+    def action():
+        with tempfile.TemporaryDirectory() as tmp:
+            return func(f"{tmp}/calls.jsonl", tmp)
+
+    return action
+
+
+# -- baseline rows ----------------------------------------------------------
+
+add("C0 record fields (baseline: no logger)", "bite", lambda: _checks.check_record_fields(_c0_base()[0]), AssertionError)
+add(
+    "C0 MagicMock usage not coerced (baseline)",
+    "bite",
+    lambda: _checks.check_magicmock_usage_not_coerced(_c0_base()[0]),
+    AssertionError,
+)
+add(
+    "C0 record builder never raises (baseline)",
+    "bite",
+    lambda: _checks.check_record_builder_never_raises(_c0_base()[0]),
+    AttributeError,
+)
+add(
+    "C0 wrapper writes agent name (baseline)",
+    "bite",
+    _with_tmp_log(lambda log, tmp: _checks.check_wrapper_writes_agent_name(_c0_base()[1], _c0_base()[0], log)),
+    AssertionError,
+)
+add(
+    "C0 call that raises after the SDK is logged (baseline)",
+    "bite",
+    _with_tmp_log(lambda log, tmp: _checks.check_logged_when_create_raises(_c0_base()[1], _c0_base()[0], log)),
+    AssertionError,
+)
+add(
+    "C0 unwritable path warns (baseline)",
+    "bite",
+    _with_tmp_log(lambda log, tmp: _checks.check_unwritable_path_never_raises(_c0_base()[1], _c0_base()[0], tmp)),
+    AssertionError,
+)
+add(
+    "C0 writer not lru-wrapped (baseline: no writer)",
+    "bite",
+    lambda: _checks.check_helper_not_lru_wrapped(_c0_base()[1]),
+    AttributeError,
+)
+add(
+    "C0 patch markers (baseline)",
+    "bite",
+    lambda: _checks.check_patch_markers(*_baseline.c0_base_sources()),
+    AssertionError,
+)
+
+# Invariants: they hold on the baseline too (it has no logger to misbehave).
+add("C0 off is inert (baseline, invariant)", "no_bite", lambda: _checks.check_off_is_inert(_c0_base()[0]))
+add(
+    "C0 same request with logging on (baseline, invariant)",
+    "no_bite",
+    lambda: _checks.check_on_sends_identical_request(_c0_base()[0]),
+)
+add(
+    "C0 same response with logging on (baseline, invariant)",
+    "no_bite",
+    lambda: _checks.check_on_returns_identical_response(_c0_base()[0]),
+)
+add(
+    "C0 wrapper off writes nothing (baseline, invariant)",
+    "no_bite",
+    _with_tmp_log(lambda log, tmp: _checks.check_wrapper_off_writes_nothing(_c0_base()[1], _c0_base()[0], log)),
+)
+add(
+    "C0 single SDK call site (baseline, invariant)",
+    "no_bite",
+    lambda: _checks.check_single_sdk_call_site(_baseline.c0_base_sources()[0]),
+)
+
+# -- mutant rows: each deliberate defect must be caught ----------------------
+
+add(
+    "C0 mutant: logger mutates the request",
+    "bite",
+    lambda: _checks.check_on_sends_identical_request(
+        _c0_mutant("mutates_request", [(_HOOK, 'anthropic_params["messages"].append({"role": "user", "content": "x"})')])[0]
+    ),
+    AssertionError,
+)
+add(
+    "C0 mutant: logger changes the response",
+    "bite",
+    lambda: _checks.check_on_returns_identical_response(
+        _c0_mutant("changes_response", [(_HOOK, 'anthropic_params["model"] = "mutant-model"')])[0]
+    ),
+    AssertionError,
+)
+add(
+    "C0 mutant: logger raises",
+    "bite",
+    lambda: _checks.check_on_returns_identical_response(
+        _c0_mutant("raises", [(_HOOK, 'raise RuntimeError("mutant: logger raised")')])[0]
+    ),
+    RuntimeError,
+)
+add(
+    "C0 mutant: switch always on",
+    "bite",
+    lambda: _checks.check_off_is_inert(_c0_mutant("always_on", [(_GUARD, "if True:\n            " + _HOOK)])[0]),
+    AssertionError,
+)
+add(
+    "C0 mutant: usage coerced with int()",
+    "bite",
+    lambda: _checks.check_magicmock_usage_not_coerced(
+        _c0_mutant("coerces", [(_TOKENS_RETURN, "return int(v)")])[0]
+    ),
+    AssertionError,
+)
+add(
+    "C0 mutant: writer lets write errors escape",
+    "bite",
+    _with_tmp_log(
+        lambda log, tmp: _checks.check_unwritable_path_never_raises(
+            *reversed(_c0_mutant("raises_on_write", client_edits=[(_WRITER_EXCEPT, _WRITER_EXCEPT.replace("Exception", "ZeroDivisionError"))])),
+            tmp,
+        )
+    ),
+    OSError,
+)
+
+_FINALLY = "                finally:\n                    # hep-theory fork: per-call usage log"
+_ON_SUCCESS_ONLY = (
+    "                except ZeroDivisionError:\n                    raise\n                else:\n"
+    "                    # hep-theory fork: per-call usage log"
+)
+add(
+    "C0 mutant: writer runs only when create() succeeds (not in finally)",
+    "bite",
+    _with_tmp_log(
+        lambda log, tmp: _checks.check_logged_when_create_raises(
+            *reversed(_c0_mutant("not_in_finally", client_edits=[(_FINALLY, _ON_SUCCESS_ONLY)])), log
+        )
+    ),
+    AssertionError,
+)
+add(
+    "C0 mutant: step lookup can raise",
+    "bite",
+    _with_tmp_log(
+        lambda log, tmp: _checks.check_wrapper_writes_agent_name(
+            *reversed(
+                _c0_mutant(
+                    "step_raises",
+                    client_edits=[("        except Exception:\n            step = None", "        except ZeroDivisionError:\n            step = None")],
+                )
+            ),
+            log,
+        )
+    ),
+    AssertionError,
+)
+add(
+    "C0 mutant: thinking / tool_choice not recorded",
+    "bite",
+    lambda: _checks.check_record_fields(
+        _c0_mutant(
+            "no_cache_opts",
+            [
+                (
+                    '"cache_opts_sha256": _h({"thinking": params.get("thinking"), "tool_choice": params.get("tool_choice")}),',
+                    '"cache_opts_sha256": None,',
+                )
+            ],
+        )[0]
+    ),
+    AssertionError,
+)
+
+_LRU_MISPLACED = [
+    (_LRU_AND_DEF, "def log_cache_seed_value("),
+    (_WRITER_DEF, "@lru_cache(maxsize=128)\n" + _WRITER_DEF),
+]
+add(
+    "C0 mutant: writer placed under @lru_cache (structure)",
+    "bite",
+    lambda: _checks.check_helper_not_lru_wrapped(_c0_mutant("lru_misplaced", client_edits=_LRU_MISPLACED)[1]),
+    AssertionError,
+)
+add(
+    "C0 mutant: writer placed under @lru_cache (drops repeat calls)",
+    "bite",
+    _with_tmp_log(
+        lambda log, tmp: _checks.check_wrapper_writes_agent_name(
+            *reversed(_c0_mutant("lru_misplaced_calls", client_edits=_LRU_MISPLACED)), log
+        )
+    ),
+    AssertionError,
+)
+
+
+# -- the patch script reproduces the fork's change ---------------------------
+
+
+def _first_diff(got: str, want: str) -> str:
+    import difflib
+
+    diff = list(difflib.unified_diff(want.splitlines(), got.splitlines(), "fork", "script", lineterm="", n=0))
+    return "; ".join(diff[2:8]) or "(differs only in trailing whitespace/newlines)"
+
+
+def _check_c0_script_reproduces_fork():
+    expected, mode = _baseline.c0_fork_sources()
+    script = _baseline._load_patch_script()
+    produced = script.apply(*_baseline.c0_base_sources())
+    assert produced is not None, "the base commit already carries the call-log marker"
+    names = ("anthropic.py", "client.py")
+    for name, got, want in zip(names, produced, expected):
+        assert got == want, f"{name}: script output != ag2 fork [{mode}]: {_first_diff(got, want)}"
+
+    import autogen.oai.anthropic as live_anthropic
+    import autogen.oai.client as live_client
+
+    for name, module, want in zip(names, (live_anthropic, live_client), expected):
+        installed = Path(module.__file__).read_text()
+        assert installed == want, f".venv {name} != ag2 fork [{mode}]: {_first_diff(installed, want)}"
+    return f"mode: {mode}"
+
+
+add("C0 patch script reproduces the ag2 fork; .venv matches", "no_bite", _check_c0_script_reproduces_fork)
+
+
+def _check_c0_script_hygiene(script):
+    def action():
+        base_a, base_c = _baseline.c0_base_sources()
+        with tempfile.TemporaryDirectory() as tmp:
+            _checks.check_patch_script_hygiene(script(), base_a, base_c, tmp)
+
+    return action
+
+
+add("C0 patch script hygiene (idempotent, exit 1 on bad anchor / partial)", "no_bite", _check_c0_script_hygiene(_baseline._load_patch_script))
+
+
+def _mutant_script(tag: str, old: str, new: str):
+    def build():
+        source = _replace_once((_baseline.REPO_ROOT / "patch_call_usage_log.py").read_text(), old, new)
+        return _baseline.load_module_from_source(source, f"_patch_mutant_{tag}", f"patch_mutant_{tag}.py")
+
+    return build
+
+
+add(
+    "C0 mutant: patch script exits 0 on a missing anchor",
+    "bite",
+    _check_c0_script_hygiene(_mutant_script("exit0", "        return 1\n    if result is None:", "        return 0\n    if result is None:")),
+    AssertionError,
+)
+add(
+    "C0 mutant: patch script does not roll back a failed second write",
+    "bite",
+    _check_c0_script_hygiene(
+        _mutant_script(
+            "no_rollback",
+            "            _write_atomic(a_path, a_src)\n        except OSError as e2:",
+            "            pass\n        except OSError as e2:",
+        )
+    ),
+    AssertionError,
+)
+add(
+    "C0 mutant: patch script lets an undecodable file raise",
+    "bite",
+    _check_c0_script_hygiene(
+        _mutant_script("no_valueerror", "except (PatchError, OSError, ValueError) as e:", "except (PatchError, OSError) as e:")
+    ),
+    UnicodeDecodeError,
+)
+
+
+# ---------------------------------------------------------------------------
 # Known open items: reproduced by the live suite as strict xfails, not
 # guarded fixes - nothing to bite-check against a baseline.
 # ---------------------------------------------------------------------------
@@ -245,7 +574,7 @@ def main() -> int:
         # than misread as confirmation.
         caught_type = expect_raises if kind == "bite" else Exception
         try:
-            action()
+            note = action()
         except _baseline.BaselineUnavailable as exc:
             rows.append((name, "SKIP", str(exc)))
             continue
@@ -261,7 +590,8 @@ def main() -> int:
             )
             continue
         else:
-            outcome_raised, detail = False, "assertion held"
+            # An action may return a short string (e.g. which mode it ran in).
+            outcome_raised, detail = False, "assertion held" + (f" [{note}]" if isinstance(note, str) else "")
 
         if kind == "bite":
             status = "BITES" if outcome_raised else "NO BITE (unexpected!)"

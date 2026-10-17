@@ -1,6 +1,8 @@
 # PROJECT_STATUS.md — CMBAgentForHEPTH_wClaude
 
-**Last updated:** 2026-09-02
+**Last updated:** 2026-10-14 (§3a and the session log only; §2's commit
+list and the other sections date from 2026-09-02 — verify against
+`git log` / `git status` first, per the convention below)
 
 > Convention: update this file at the end of every work session — what
 > changed, what's confirmed, what's open, and the exact next command.
@@ -157,6 +159,58 @@ next full pipeline run.
 
 ---
 
+## 3a. Prompt caching — Phase 0 implemented; the measurement run is next
+
+Plan: `docs/prompt_caching_plan.md` (97% of the cost is input, mostly
+context re-sent on every agent turn; caching would bill repeated prefixes
+at a fraction of the price).
+
+**Phase 0 — per-call usage log — implemented 2026-10-14. No behaviour
+change; nothing is cached yet.**
+- ag2 fork commit **`552f5cb9`** on `cmbagent-real-base`: opt-in via the
+  environment variable `CMBAGENT_CALL_LOG` (a file path; unset = off). One
+  JSON line per Anthropic call: `ts`, `pid`, `agent`, `step`, `model`,
+  input / cache-write / cache-read / output tokens, and hashes of the
+  system block, tools, first message and `thinking` / `tool_choice`.
+- `patch_call_usage_log.py` reproduces that commit in `.venv` (idempotent;
+  exits 1 and writes nothing on a missing anchor; **re-run it after any
+  `.venv` rebuild**). `dev_scripts/summarize_call_log.py` summarises a log
+  and prints the Phase 3 / 4 / 5 verdict lines.
+- Tests: row **C0** in `tests/regression/README.md`. `pytest
+  tests/regression -q` (always scoped): 74 passed, 2 expected xfails, the
+  same with the switch set. Bite evidence: `python
+  tests/regression/bite_check.py` (exit 0; its "reproduces the ag2 fork"
+  row should read `mode: commit (ag2 HEAD)`).
+- **Known limitations** (full list in `CHANGELOG_ADDENDUM_4.md`): use one
+  run per process or one log file per run; always set `CMBAGENT_CALL_LOG`
+  to an absolute path; logging assumes calls go through `OpenAIWrapper`,
+  one at a time per client; runs that share a pid (every container run is
+  pid 1) are merged by the summary; the flip-flop fallback over-counts an
+  A, B, A reuse when the step is unknown; `step` is read from each agent's
+  context variables and could not be verified offline.
+
+**Next, in order:**
+1. **The real Susskind–Uglum run with logging** (about $3). Then read the
+   summary — first the "records have step None" line (a high share means
+   the step field is not working and Phase 4 rests on a fallback), then the
+   Phase 3 / 4 / 5 verdicts:
+   ```
+   export CMBAGENT_CALL_LOG=/absolute/path/to/susskind_uglum_calls.jsonl
+   python research_kk_tower_susskind_uglum_check.py
+   python dev_scripts/summarize_call_log.py "$CMBAGENT_CALL_LOG"
+   ```
+2. **Caching Phases 1–2:** Phase 1, automatic caching (a top-level
+   `cache_control` on Claude requests behind a per-model switch; check the
+   installed `anthropic` SDK, 0.116.0, accepts it); Phase 2, correct cost
+   accounting (price cache reads and writes, and add cache columns to the
+   cost reports and `summarize_runs.py`). Tests C1–C2 as specified in the
+   plan, each with a bite check.
+3. After that, Phase 3 (hysteresis history window; it will flip the R5
+   burst-case xfail, so update that test with it). Phases 4–5 only if the
+   Phase 0 log shows system-prompt churn or long gaps.
+
+---
+
 ## 4. Model routing — open decision, needs Kazu's go-ahead
 
 `cmbagent/utils/utils.py`'s `default_agents_llm_model` dict currently
@@ -262,3 +316,16 @@ Disposable scaffolding (`*.diff`, `classify_patch_scripts*.py`,
   Working tree now clean for the first time since the migration.
   **Next: (a) the Claude Code adversarial permission test from §1,
   (b) verify the ag2-side transform per §3, (c) then §4 or §5.**
+- **2026-10-14** — Prompt caching, Phase 0 (see §3a). ag2 commit `552f5cb9`
+  (per-call usage log, `CMBAGENT_CALL_LOG`); cmbagent side on branch
+  `prompt-caching-phase0`: `patch_call_usage_log.py`,
+  `dev_scripts/summarize_call_log.py`, regression tests C0 and their bite
+  rows, changelog / README / plan-doc entries. Built in plan mode with
+  tests written first and shown failing; three `/code-review` rounds, whose
+  reproduced findings (billed calls that then raise were unlogged; no
+  rollback if the second patch write fails; interleaved runs hid churn;
+  step-boundary slides; summarizer crashes on odd logs) were fixed. The
+  remaining ones (reused pids merge runs; the flip-flop fallback
+  over-counts A, B, A) are recorded as known limitations, not fixed.
+  **Next: the real
+  Susskind–Uglum run with `CMBAGENT_CALL_LOG`, then caching Phases 1–2.**

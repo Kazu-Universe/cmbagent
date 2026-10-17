@@ -10,7 +10,8 @@ reverted** and pass with it restored.
 
 Status: **fixed** = the bug was fixed, the test guards it; **invariant** =
 a configuration rule to enforce; **open** = a known risk not yet fixed (mark
-`xfail` until it is).
+`xfail` until it is); **feature** = new opt-in functionality, plus the invariant
+that it changes no behaviour.
 
 ## Tier 1: affects every run
 
@@ -44,6 +45,15 @@ a configuration rule to enforce; **open** = a known risk not yet fixed (mark
 | R16 | YAML block scalars (16) | `cmbagent/agents/*/*.yaml` | Every agent YAML parses, and every `{placeholder}` in a prompt is a known context key or explicitly allowlisted | fixed + lint |
 | R17 | Patch hygiene | `patch_*.py` | On a temporary copy of the target file: running a patch twice is a no-op, and a mismatched target aborts without writing | invariant |
 | R18 | Simulated actions (15) | `researcher_executor` | After a mocked "save report" step, the file exists on disk | open (`xfail`) |
+
+## Prompt-caching series (`docs/prompt_caching_plan.md`)
+
+| ID | Phase | Where | Test | Status |
+|---|---|---|---|---|
+| C0 | 0: per-call usage log (`CMBAGENT_CALL_LOG`) | ag2 `oai/anthropic.py`, `oai/client.py` (fork commit `552f5cb9`), `patch_call_usage_log.py`, `dev_scripts/summarize_call_log.py` | `test_c0_call_log.py`: inert when unset; with logging on the request sent and the completion returned are identical (text, tool-use and max-tokens responses); record fields, hashes and agent / step / pid; ints only (a mocked usage field is `None`, not 1); a call that raises after the SDK returned is still logged; an unwritable path warns and never raises; the writer is not under `@lru_cache`; one SDK call site (matcher precision tested); venv-rebuild marker check; summarizer rules (same-`pid`-and-step churn, flip-flop fallback, interleaved runs, step-boundary slides, same-system gaps, share of `step` `None`; odd logs: NaN / bool `ts`, wrong-typed fields, undecodable or deeply nested lines, missing system hash, no-usage records, empty log, threshold boundaries) | feature + invariant |
+
+C1-C4 (cache-control on requests, cost accounting, the hysteresis limiter and
+the R5 update) are specified in the plan and not implemented yet.
 
 ## How to build it
 
@@ -135,6 +145,30 @@ Exit codes:
 | `0` | Every row matched its expected outcome, nothing skipped. Evidence is complete - safe to cite as "bites: yes". |
 | `1` | At least one row's outcome didn't match what it was declared to expect - either a fix stopped biting, an expected non-bite started biting, or a check raised an exception type it didn't declare (reported as `ERROR (unexpected exception type)`, which usually means a bug in the check itself, not in the code under test). |
 | `2` | No failures, but at least one row was `SKIP`ped - usually because the sibling `ag2` checkout (`$AG2_FORK_DIR`, default `../ag2`) isn't present. Evidence is **incomplete**, not confirmed; do not cite it as "bites: yes" until it's re-run clean. |
+
+### C0 rows in `bite_check.py`
+
+- **Baseline** = ag2 `dc191dd5` (the fork before the call-log commit). Record,
+  writer and marker checks BITE on it; the no-behaviour-change invariants (off
+  is inert, same request, same response, single SDK call site) hold on it
+  because it has no logger, so they are `no_bite` rows.
+- **Mutants** show those invariants do bite: the patched sources with one
+  deliberate defect each (a logger that mutates the request, changes the
+  response or raises; a switch that is always on; usage coerced with `int()`;
+  a writer that lets write errors escape, runs only on success, can raise while
+  reading the step, or sits under `@lru_cache`; `thinking` / `tool_choice` not
+  recorded), and the patch script with a defect each (exits 0 on a missing
+  anchor, no rollback after a failed second write, an undecodable file raises).
+- **"patch script reproduces the ag2 fork; .venv matches"** has two modes, shown
+  in its output. `working tree (uncommitted)`: the expected sources are the
+  `../ag2` working-tree files (before the ag2 commit). `commit (ag2 HEAD)`:
+  the working tree equals `HEAD`, so the sources are the real commit. In both,
+  the script applied to `dc191dd5` must give byte-identical files, and the
+  installed `.venv` files must equal them. Re-run it in commit mode after the
+  ag2 commit and cite that run.
+- The patch script's hygiene (idempotent; exit 1 and nothing written on a
+  missing anchor or a partial patch; rollback; non-UTF-8 input) is checked
+  on temporary copies of the baseline sources.
 
 ## Separate from this suite: evaluations
 

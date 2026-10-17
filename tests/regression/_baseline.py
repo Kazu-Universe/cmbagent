@@ -131,3 +131,72 @@ def load_cmbagent_baseline_hand_offs() -> ModuleType:
     registration). Works even without an `ag2` checkout."""
     src = _git_show(REPO_ROOT, CMBAGENT_BASELINE, "cmbagent/hand_offs.py")
     return _load_module_from_source(src, "cmbagent._baseline_hand_offs", "baseline_hand_offs.py")
+
+
+# ---------------------------------------------------------------------------
+# C0: per-call usage log (Phase 0 of docs/prompt_caching_plan.md)
+# ---------------------------------------------------------------------------
+
+# Tip of ag2 `cmbagent-real-base` before the call-log commit. It is the parent
+# of that commit, pinned by hash so the baseline stays the same once more
+# commits land on top.
+AG2_C0_BASE = "dc191dd5"
+C0_FILES = ("autogen/oai/anthropic.py", "autogen/oai/client.py")
+
+
+def load_module_from_source(source: str, modname: str, filename: str) -> ModuleType:
+    """Public wrapper so `bite_check.py` can build mutant modules from source."""
+    return _load_module_from_source(source, modname, filename)
+
+
+def c0_base_sources() -> tuple[str, str]:
+    """(anthropic.py, client.py) as they were before the call-log commit."""
+    return tuple(_git_show(_ag2_fork_dir(), AG2_C0_BASE, rel) for rel in C0_FILES)  # type: ignore[return-value]
+
+
+def load_c0_base_modules() -> tuple[ModuleType, ModuleType]:
+    """Baseline (anthropic, client) modules without the call-log hooks."""
+    a_src, c_src = c0_base_sources()
+    return (
+        _load_module_from_source(a_src, "autogen.oai._baseline_c0_anthropic", "baseline_c0_anthropic.py"),
+        _load_module_from_source(c_src, "autogen.oai._baseline_c0_client", "baseline_c0_client.py"),
+    )
+
+
+def _load_patch_script() -> ModuleType:
+    path = REPO_ROOT / "patch_call_usage_log.py"
+    spec = importlib.util.spec_from_file_location("_patch_call_usage_log", path)
+    if spec is None or spec.loader is None:
+        raise BaselineUnavailable(f"could not load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def c0_patched_sources() -> tuple[str, str]:
+    """The base sources run through `patch_call_usage_log.apply`."""
+    result = _load_patch_script().apply(*c0_base_sources())
+    if result is None:
+        raise BaselineUnavailable("the base commit already contains the call-log marker")
+    return result
+
+
+def c0_fork_sources() -> tuple[tuple[str, str], str]:
+    """What the patch script has to reproduce: ((anthropic, client), mode).
+
+    - If the ag2 working-tree files equal what `git show HEAD:` returns, the
+      change is committed: the sources are HEAD's, the real commit.
+    - Otherwise the change is still uncommitted: the sources are the
+      working-tree files.
+    """
+    fork = _ag2_fork_dir()
+    work = []
+    for rel in C0_FILES:
+        path = fork / rel
+        if not path.is_file():
+            raise BaselineUnavailable(f"no file at {path}")
+        work.append(path.read_text())
+    head = [_git_show(fork, "HEAD", rel) for rel in C0_FILES]
+    if work == head:
+        return (head[0], head[1]), "commit (ag2 HEAD)"
+    return (work[0], work[1]), "working tree (uncommitted)"
